@@ -8,7 +8,6 @@ export const AuthScreen: React.FC = () => {
   const { login, register } = useAuth();
   const [isRegistering, setIsRegistering] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
-  const [generatedSecurityCode, setGeneratedSecurityCode] = useState<string>('');
   
   // Support Chat State
   const [isSupportOpen, setIsSupportOpen] = useState(false);
@@ -38,28 +37,25 @@ export const AuthScreen: React.FC = () => {
         // Adiciona @ se não tiver apenas para o registro de username
         const finalUsername = username.startsWith('@') ? username : `@${username}`;
         
-        const newUser = await register({
+        await register({
           username: finalUsername,
           name,
           email,
           password
         });
         
-        setGeneratedSecurityCode(newUser.securityCode);
         setShowWelcome(true);
         
         setTimeout(() => {
              // Estado global já atualizou, o componente vai desmontar
-        }, 6000);
+        }, 3000);
       } else {
-        // Lógica de Login: Se parecer email, manda email. Se não, tenta tratar como user.
+        // Lógica de Login: Se parecer email, manda email. Se não, tenta tratar como user (adiciona @ se faltar)
         let loginIdentifier = username;
         
-        // Se não é email e estamos no modo local, adiciona @ por conveniência
-        if (!isSupabaseConfigured && !username.includes('@')) {
+        if (!username.includes('@') && !username.includes('.')) {
              loginIdentifier = `@${username}`;
         }
-        // Se estamos no Supabase e o usuário digitou apenas o user sem @, não fazemos nada (vai falhar se não for email, mas o erro orienta)
         
         await login(loginIdentifier, password);
       }
@@ -80,18 +76,6 @@ export const AuthScreen: React.FC = () => {
             </div>
             <h1 className="text-3xl font-bold text-brand-text">Bem-vindo!</h1>
             <p className="text-brand-secondary text-lg">Sua conta foi criada com sucesso.</p>
-            
-            {generatedSecurityCode && (
-                <div className="my-6 p-4 bg-brand-bg rounded-xl border border-brand-primary/30">
-                    <p className="text-sm text-brand-secondary uppercase font-bold mb-2">Seu Código de Segurança</p>
-                    <div className="text-3xl font-mono font-black text-brand-primary tracking-widest select-all cursor-text">
-                        {generatedSecurityCode}
-                    </div>
-                    <p className="text-xs text-brand-danger mt-2">
-                        ⚠️ Anote este código! Você precisará dele para recuperar sua senha no suporte.
-                    </p>
-                </div>
-            )}
             
             <p className="text-sm text-brand-secondary animate-pulse">Entrando no aplicativo...</p>
          </div>
@@ -136,7 +120,7 @@ export const AuthScreen: React.FC = () => {
                     value={isRegistering ? username.replace('@','') : username}
                     onChange={(e) => setUsername(e.target.value)}
                     className={`w-full bg-brand-bg border border-brand-border rounded-lg py-2 ${isRegistering ? 'pl-7' : 'pl-4'} pr-4 text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary`}
-                    placeholder={isRegistering ? "usuario" : "seu@email.com"}
+                    placeholder={isRegistering ? "usuario" : "seu@email.com ou @usuario"}
                     required
                 />
             </div>

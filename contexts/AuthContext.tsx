@@ -114,7 +114,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
             
             // Carregar lista de usuários se for admin (simplificado para demo)
-            // Em produção, isso seria feito apenas sob demanda
             if (session?.user) {
                  // Check admin role locally first or assume fetch
             }
@@ -182,7 +181,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                       text: s.text,
                       createdAt: s.created_at
                   }));
-                  // Otimização: Pegar username da lista de users carregada
                   setSuggestions(mappedSugs); 
               }
 
@@ -198,28 +196,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (username: string, password: string): Promise<boolean> => {
     if (isSupabaseConfigured) {
-        // No Supabase, login é por email. Vamos precisar buscar o email pelo username ou pedir email no login.
-        // Hack para manter UX: Usuário digita @user, mas Supabase pede email.
-        // Solução: Se for modo Supabase, assumimos que o login DEVE ser email ou adaptamos.
-        // Para simplificar este app híbrido, vamos tentar fazer login com email se contiver @ e ., 
-        // ou buscar o email na tabela profiles (não seguro no client-side sem RLS aberto).
-        // Melhor abordagem: Pedir Email no form de login se usar Supabase.
-        // Mas para manter o código:
-        
-        // Se o input parece um email, tenta direto
-        if (username.includes('@') && username.includes('.')) {
-             const { error } = await supabase.auth.signInWithPassword({ email: username, password });
-             if (error) throw new Error(error.message);
-             return true;
-        } else {
-             // Se é username, teríamos que resolver. 
-             // Para este desafio, vamos assumir que no Supabase o usuário usa Email para logar ou ajustamos o AuthScreen.
-             throw new Error("No modo nuvem, por favor use seu E-mail para entrar.");
+        let emailToLogin = username;
+
+        // Se NÃO parece um email (é um username tipo @user), tenta buscar o email correspondente
+        if (!username.includes('@') || !username.includes('.')) {
+             // Garante formato @username
+             const targetUsername = username.startsWith('@') ? username : `@${username}`;
+             
+             // Busca na tabela de perfis
+             const { data, error } = await supabase
+                .from('profiles')
+                .select('email')
+                .eq('username', targetUsername)
+                .single();
+             
+             if (data && data.email) {
+                 emailToLogin = data.email;
+             } else {
+                 // Se não achar, deixa falhar no signIn ou lança erro aqui
+                 throw new Error("Usuário não encontrado. Tente entrar com o E-mail.");
+             }
         }
+
+        // Login com o email (seja o digitado ou o encontrado via username)
+        const { error } = await supabase.auth.signInWithPassword({ email: emailToLogin, password });
+        if (error) throw new Error("Credenciais inválidas.");
+        return true;
+
     } else {
         // Modo Local
         await new Promise(resolve => setTimeout(resolve, 500));
-        const user = users.find(u => u.username.toLowerCase() === username.toLowerCase() && u.password === password);
+        // Suporta login por @username ou email no modo local também
+        const user = users.find(u => 
+            (u.username.toLowerCase() === username.toLowerCase() || u.email.toLowerCase() === username.toLowerCase()) 
+            && u.password === password
+        );
+        
         if (user) {
             if (user.isBanned) throw new Error("Esta conta foi banida.");
             setCurrentUser(user);
@@ -231,11 +243,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const register = async (data: Omit<User, 'id' | 'isAdmin' | 'isBanned' | 'subscriptionExpiresAt' | 'createdAt' | 'securityCode'>) => {
-    const securityCode = generateUniqueSecurityCode(users); // Gera localmente para garantir unicidade visual, mas no Supabase o trigger pode gerar ou salvamos este.
+    const securityCode = generateUniqueSecurityCode(users); 
 
     if (isSupabaseConfigured) {
         // Registro no Supabase
-        // Passamos meta-dados para o trigger criar o profile
         const { data: authData, error } = await supabase.auth.signUp({
             email: data.email,
             password: data.password,
@@ -250,7 +261,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (error) throw new Error(error.message);
         if (authData.user) {
-            // Retorna objeto User simulado para a tela de boas-vindas
             return {
                 id: authData.user.id,
                 username: data.username,
@@ -304,7 +314,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       if (isSupabaseConfigured) {
           await supabase.from('profiles').update({ subscription_expires_at: expiryDate }).eq('id', userId);
-          // Atualiza lista local para refletir na UI
           setUsers(prev => prev.map(u => u.id === userId ? { ...u, subscriptionExpiresAt: expiryDate } : u));
       } else {
           const updated = users.map(u => u.id === userId ? { ...u, subscriptionExpiresAt: expiryDate } : u);
