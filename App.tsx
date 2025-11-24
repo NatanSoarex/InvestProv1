@@ -23,10 +23,14 @@ const AuthenticatedApp: React.FC = () => {
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const { currentUser, isLoading } = useAuth();
 
-  // FORCE DASHBOARD ON LOGIN
+  // FORCE DASHBOARD ON LOGIN - Corrigido para garantir redirecionamento
   useEffect(() => {
       if (currentUser) {
-          setCurrentView('dashboard');
+          // Pequeno delay para garantir que a renderização não conflite
+          const timer = setTimeout(() => {
+              setCurrentView('dashboard');
+          }, 100);
+          return () => clearTimeout(timer);
       }
   }, [currentUser?.id]); 
 
@@ -36,7 +40,7 @@ const AuthenticatedApp: React.FC = () => {
           <div className="flex min-h-screen items-center justify-center bg-brand-bg">
               <div className="flex flex-col items-center gap-4">
                   <div className="w-12 h-12 border-4 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin"></div>
-                  <p className="text-brand-secondary text-sm animate-pulse">Autenticando...</p>
+                  <p className="text-brand-secondary text-sm animate-pulse">Carregando ProVest...</p>
               </div>
           </div>
       );

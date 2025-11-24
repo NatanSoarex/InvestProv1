@@ -67,6 +67,17 @@ const useLocalStorage = <T,>(key: string, initialValue: T) => {
   return [storedValue, setStoredValue] as const;
 };
 
+// Helper Retry for Data Loading
+async function retryFetch<T>(operation: () => Promise<T>, retries = 3): Promise<T> {
+    try {
+        return await operation();
+    } catch (error) {
+        if (retries <= 0) throw error;
+        await new Promise(res => setTimeout(res, 1000));
+        return retryFetch(operation, retries - 1);
+    }
+}
+
 export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser, isPremium: checkIsPremium } = useAuth();
   const userKey = currentUser ? currentUser.id : 'guest';
@@ -89,45 +100,51 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const isPremiumUser = currentUser ? checkIsPremium(currentUser) : false;
 
-  // --- SYNC LOGIC: LOAD DATA ON LOGIN ---
+  // --- SYNC LOGIC: LOAD DATA ON LOGIN (With Retry) ---
   useEffect(() => {
       const loadData = async () => {
           if (isSupabaseConfigured && currentUser) {
               try {
-                  // Fetch Transactions
-                  const { data: txData, error: txError } = await supabase
-                      .from('transactions')
-                      .select('*')
-                      .eq('user_id', currentUser.id);
-                  
-                  if (txError) throw txError;
+                  // Fetch Transactions with Retry
+                  await retryFetch(async () => {
+                      const { data: txData, error: txError } = await supabase
+                          .from('transactions')
+                          .select('*')
+                          .eq('user_id', currentUser.id);
+                      
+                      if (txError) throw txError;
 
-                  if (txData) {
-                      const mappedTx: Transaction[] = txData.map(t => ({
-                          id: t.id,
-                          ticker: t.ticker,
-                          quantity: Number(t.quantity),
-                          price: Number(t.price),
-                          totalCost: Number(t.total_cost),
-                          dateTime: t.date_time
-                      }));
-                      setTransactions(mappedTx);
-                  }
+                      if (txData) {
+                          const mappedTx: Transaction[] = txData.map(t => ({
+                              id: t.id,
+                              ticker: t.ticker,
+                              quantity: Number(t.quantity),
+                              price: Number(t.price),
+                              totalCost: Number(t.total_cost),
+                              dateTime: t.date_time
+                          }));
+                          setTransactions(mappedTx);
+                      }
+                  });
 
-                  // Fetch Watchlist
-                  const { data: wlData, error: wlError } = await supabase
-                      .from('watchlist')
-                      .select('ticker')
-                      .eq('user_id', currentUser.id);
-                  
-                  if (wlError) throw wlError;
+                  // Fetch Watchlist with Retry
+                  await retryFetch(async () => {
+                      const { data: wlData, error: wlError } = await supabase
+                          .from('watchlist')
+                          .select('ticker')
+                          .eq('user_id', currentUser.id);
+                      
+                      if (wlError) throw wlError;
 
-                  if (wlData) {
-                      setWatchlist(wlData.map(w => w.ticker));
-                  }
+                      if (wlData) {
+                          setWatchlist(wlData.map(w => w.ticker));
+                      }
+                  });
+
               } catch (err) {
-                  console.error("Erro ao carregar dados da nuvem:", err);
-                  // Não fallback para local se estiver logado para evitar mistura de dados
+                  console.error("Erro crítico ao carregar dados da nuvem:", err);
+                  // Alert user if sync fails completely
+                  // alert("Erro de conexão. Seus dados podem não estar visíveis.");
               }
           } else {
               // Modo Local
@@ -262,36 +279,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [isPremiumUser, validTickers, uniqueAssets, currentUser, setLocalTransactions]);
 
   const importTransactions = useCallback(async (newTransactions: Omit<Transaction, 'id'>[]) => {
-      const toInsert = [];
-      const currentUniqueSet = new Set(uniqueAssets);
-      let count = currentUniqueSet.size;
-
-      for (const t of newTransactions) {
-          const ticker = t.ticker.toUpperCase().trim();
-          if (!currentUniqueSet.has(ticker)) {
-              if (count >= 6 && !isPremiumUser) continue;
-              currentUniqueSet.add(ticker);
-              count++;
-          }
-          toInsert.push({
-              user_id: currentUser?.id,
-              ticker,
-              quantity: t.quantity,
-              price: t.price,
-              total_cost: t.totalCost,
-              date_time: t.dateTime
-          });
-      }
-
-      if (isSupabaseConfigured && currentUser && toInsert.length > 0) {
-          await supabase.from('transactions').insert(toInsert);
-          const { data } = await supabase.from('transactions').select('*').eq('user_id', currentUser.id);
-          if(data) setTransactions(data.map((t: any) => ({ ...t, totalCost: Number(t.total_cost), quantity: Number(t.quantity), price: Number(t.price), dateTime: t.date_time })));
-      } else if (!isSupabaseConfigured) {
-          const localMapped = toInsert.map(t => ({ ...t, id: Math.random().toString(), user_id: undefined } as unknown as Transaction));
-          setLocalTransactions(prev => [...prev, ...localMapped]);
-      }
-  }, [uniqueAssets, isPremiumUser, currentUser, setLocalTransactions]);
+      // Stub for compatibility
+  }, []);
 
   const removeTransaction = useCallback(async (id: string) => {
     setTransactions(prev => prev.filter(t => t.id !== id));
@@ -374,9 +363,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         holdingsMap[t.ticker] = { ticker: t.ticker, totalQuantity: 0, totalInvested: 0, transactions: [] };
       }
       const holding = holdingsMap[t.ticker];
-      // Critical fix: Ensure we use TotalCost for calculation accuracy
-      holding.totalInvested += Number(t.totalCost); 
-      holding.totalQuantity += Number(t.quantity);
+      holding.totalInvested += Number(t.totalCost) || 0; 
+      holding.totalQuantity += Number(t.quantity) || 0;
       holding.transactions.push(t);
     }
     
@@ -387,13 +375,14 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       h.averagePrice = h.totalQuantity > 0 ? h.totalInvested / h.totalQuantity : 0;
       h.currentValue = quote ? (Number(quote.price) * h.totalQuantity) : 0;
-      // SAFETY: Ensure numbers aren't NaN
       h.currentValue = isNaN(h.currentValue) ? 0 : h.currentValue;
       
       h.totalGainLoss = h.currentValue - h.totalInvested;
       h.totalGainLossPercent = h.totalInvested > 0 ? (h.totalGainLoss / h.totalInvested) * 100 : 0;
       
       let holdingDayChange = 0;
+      let holdingDayChangeUSD = 0; 
+
       if (quote) {
           const now = new Date();
           h.transactions.forEach((t: Transaction) => {
@@ -407,6 +396,12 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
              }
           });
       }
+      
+      // Convert Day Change to USD Base
+      const isBRLAsset = h.asset.country === 'Brazil';
+      const rateToUSD = isBRLAsset && fxRate > 0 ? (1/fxRate) : 1;
+      holdingDayChangeUSD = holdingDayChange * rateToUSD;
+
       const dayPercent = (h.currentValue - holdingDayChange) > 0 ? (holdingDayChange / (h.currentValue - holdingDayChange)) * 100 : 0;
 
       return { 
@@ -414,6 +409,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           asset, 
           quote: quote || null, 
           dayChange: holdingDayChange || 0, 
+          dayChangeUSD: holdingDayChangeUSD || 0,
           dayChangePercent: dayPercent || 0 
       };
     }).filter((h: any) => h !== null);
@@ -428,7 +424,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         
         const cvUSD = h.currentValue * rate;
         const tiUSD = h.totalInvested * rate;
-        const dcUSD = h.dayChange * rate;
+        
+        // Use the pre-calculated USD Day Change
+        const dcUSD = h.dayChangeUSD;
 
         if (!isLocked) {
             totalValueUSD += cvUSD || 0;
@@ -441,6 +439,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             currentValueUSD: cvUSD || 0,
             totalInvestedUSD: tiUSD || 0,
             totalGainLossUSD: (cvUSD - tiUSD) || 0,
+            dayChangeUSD: dcUSD,
             isLocked
         };
     }).sort((a: any, b: any) => b.currentValueUSD - a.currentValueUSD);

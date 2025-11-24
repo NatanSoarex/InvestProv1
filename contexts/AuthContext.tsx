@@ -129,21 +129,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     const optimisticUser = mapSessionToUser(session);
                     setCurrentUser(optimisticUser);
 
-                    // 2. Silent DB Refresh
+                    // 2. Insistent DB Refresh (Retry Logic)
                     (async () => {
                         try {
-                            const { data: profile } = await supabase
-                                .from('profiles')
-                                .select('*')
-                                .eq('id', session.user.id)
-                                .single();
+                            const fetchProfile = async () => {
+                                const { data, error } = await supabase
+                                    .from('profiles')
+                                    .select('*')
+                                    .eq('id', session.user.id)
+                                    .single();
+                                if (error) throw error;
+                                return data;
+                            };
+                            const profile = await retryOperation(fetchProfile, 3, 500);
                             
                             if (profile) {
                                 const syncedUser = mapSessionToUser(session, profile);
                                 setCurrentUser(syncedUser);
                             }
                         } catch (err) {
-                            console.warn("Background profile sync failed, using session data.");
+                            console.warn("Background profile sync failed even after retries, using session data.");
                         }
                     })();
                 }
@@ -309,7 +314,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const securityCode = generateUniqueSecurityCode(users); 
 
     if (isSupabaseConfigured) {
-        // 1. Check Duplicates
+        // 1. Check Duplicates (Strict Check)
         try {
             const { data: existingUser } = await supabase
                 .from('profiles')
@@ -340,7 +345,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (error) throw new Error(error.message);
         
         if (authData.user) {
-            // 3. Force Profile Creation
+            // 3. Force Profile Creation with RETRY (Insistent Save)
             const insertProfile = async () => {
                 const isAdmin = checkIsAdminLocal(data.username);
                 await supabase.from('profiles').insert({
@@ -354,9 +359,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             };
 
             try {
-                await retryOperation(insertProfile, 3, 1000);
+                await retryOperation(insertProfile, 5, 1000); // Try 5 times
             } catch (profileErr) {
-                console.error("Failed to force-save profile:", profileErr);
+                console.error("Failed to force-save profile after retries:", profileErr);
+                // Even if profile insert fails, we let user enter via metadata
             }
 
             const newUser: User = {
@@ -397,9 +403,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    // 1. UI First: Remove usuário da tela imediatamente
     setCurrentUser(null);
+    
+    // 2. Background: Limpa sessão no servidor
     if (isSupabaseConfigured) {
-        try { await supabase.auth.signOut(); } catch (e) { }
+        try {
+            await supabase.auth.signOut();
+        } catch (e) {
+            // Erro silencioso
+        }
     } else {
         localStorage.removeItem('provest_session');
     }
