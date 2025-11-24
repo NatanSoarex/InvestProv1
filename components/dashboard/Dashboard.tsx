@@ -84,7 +84,6 @@ const Dashboard: React.FC = () => {
 
   const ranges: TimeRange[] = ['1D', '5D', '1M', '6M', 'YTD', '1Y', 'ALL'];
 
-  // Extract current quotes map to seed the chart
   const currentQuotesMap = useMemo(() => {
       const map: Record<string, Quote> = {};
       holdings.forEach(h => {
@@ -102,8 +101,7 @@ const Dashboard: React.FC = () => {
       };
       
       try {
-        if (portfolioHistory.length === 0) setIsHistoryLoading(true);
-        // Pass currentQuotesMap to ensure the chart ends at the exact current Net Worth
+        // Use currentQuotes to build resilient history
         const historyData = await financialApi.getPortfolioPriceHistory(transactions, fxRate, selectedRange, currentQuotesMap);
         setPortfolioHistory(historyData);
       } catch (e) {
@@ -113,14 +111,11 @@ const Dashboard: React.FC = () => {
       }
     }
 
+    // Trigger fetch when range or quotes change (for real-time chart updates)
     fetchHistory();
-    // Refresh chart every minute to keep 1D live
-    const intervalId = setInterval(fetchHistory, 60000);
-    return () => clearInterval(intervalId);
+    
+  }, [transactions, fxRate, selectedRange, currentQuotesMap]);
 
-  }, [transactions, fxRate, selectedRange, currentQuotesMap]); // Re-run if quotes change drastically
-
-  // Convert History Data for Graph based on Settings (BRL/USD)
   const displayHistory = portfolioHistory.map(p => ({
       ...p,
       price: settings.currency === 'BRL' ? p.price * fxRate : p.price,
@@ -135,10 +130,7 @@ const Dashboard: React.FC = () => {
       if (selectedRange === '5D' || selectedRange === '1M') {
           return `${d.getDate()}/${d.getMonth() + 1}`;
       }
-      if (selectedRange === 'ALL' || selectedRange === '1Y') {
-          return `${d.getMonth() + 1}/${d.getFullYear().toString().substr(2)}`;
-      }
-      return d.toLocaleDateString();
+      return `${d.getMonth() + 1}/${d.getFullYear().toString().substr(2)}`;
   };
 
   return (
@@ -150,7 +142,6 @@ const Dashboard: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-4">
-            {/* BOTÃO ADM ESTILIZADO NEON - Apenas se for o admin natansoarex (validado no contexto) */}
             {currentUser?.isAdmin && (
                 <button 
                     onClick={() => setIsAdminOpen(true)}
@@ -183,7 +174,6 @@ const Dashboard: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Chart Section */}
         <Card className="lg:col-span-2 border-brand-border/50 bg-brand-surface/30 backdrop-blur-md">
             <CardHeader className="border-brand-border/30 flex flex-col sm:flex-row justify-between items-center pb-2 gap-4">
                 <span>{t('wealthEvolution')}</span>
@@ -193,7 +183,7 @@ const Dashboard: React.FC = () => {
                             key={range}
                             onClick={() => {
                                 setSelectedRange(range);
-                                setPortfolioHistory([]); // Clear to show loading
+                                // Don't clear history to prevent blinking, let it update
                             }}
                             className={`px-3 py-1 text-xs font-medium rounded-md transition-all duration-200 whitespace-nowrap ${
                                 selectedRange === range 
@@ -207,15 +197,7 @@ const Dashboard: React.FC = () => {
                 </div>
             </CardHeader>
             <CardContent className="h-[350px] w-full p-0 pt-4">
-                {isHistoryLoading && portfolioHistory.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-brand-secondary animate-pulse gap-3">
-                        <svg className="animate-spin h-8 w-8 text-brand-primary/50" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <span className="text-sm">{t('calculating')}</span>
-                    </div>
-                ) : displayHistory.length > 0 ? (
+                {displayHistory.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
                         <ComposedChart data={displayHistory} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                         <defs>
@@ -234,7 +216,7 @@ const Dashboard: React.FC = () => {
                             tickLine={false} 
                             axisLine={false} 
                             tickFormatter={formatXAxis}
-                            minTickGap={40} 
+                            minTickGap={30} 
                             dy={10}
                         />
                         
@@ -313,7 +295,14 @@ const Dashboard: React.FC = () => {
                     </ResponsiveContainer>
                 ) : (
                     <div className="flex flex-col items-center justify-center h-full text-brand-secondary text-sm">
-                        <p>{t('addAssetsChart')}</p>
+                        {isHistoryLoading ? (
+                             <svg className="animate-spin h-8 w-8 text-brand-primary/50" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        ) : (
+                            <p>{t('addAssetsChart')}</p>
+                        )}
                     </div>
                 )}
             </CardContent>
