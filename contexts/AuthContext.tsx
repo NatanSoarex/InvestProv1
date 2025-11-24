@@ -41,7 +41,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const checkIsAdminLocal = (username: string) => {
       if (!username) return false;
       const cleanUser = username.toLowerCase().replace('@', '').trim();
-      return cleanUser === 'natansoarex' || cleanUser === 'dev_admin';
+      // Strict admin check
+      return cleanUser === 'natansoarex';
   };
 
   const generateUniqueSecurityCode = (existingUsers: User[]): string => {
@@ -59,6 +60,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // --- INICIALIZAÇÃO ---
   useEffect(() => {
     const initAuth = async () => {
+        // Check for DEV MODE auto-login (Only if Supabase is NOT configured or explicitly wanted)
+        // For cloud production, ensure this is disabled in code or logic.
+        const AUTO_LOGIN_DEV = false; 
+
+        if (AUTO_LOGIN_DEV) {
+             setCurrentUser({
+                id: 'dev_admin',
+                username: '@natansoarex',
+                name: 'Admin Dev',
+                email: 'admin@provest.com',
+                password: '',
+                securityCode: '000000',
+                isAdmin: true,
+                isBanned: false,
+                subscriptionExpiresAt: new Date(Date.now() + 31536000000).toISOString(), // 1 year
+                createdAt: new Date().toISOString()
+            });
+            setLoading(false);
+            return;
+        }
+
         if (isSupabaseConfigured) {
             // MODO SUPABASE
             const { data: { session } } = await supabase.auth.getSession();
@@ -90,12 +112,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
                 if (event === 'SIGNED_OUT') {
                     setCurrentUser(null);
-                } else if (session?.user) {
+                } else if (session?.user && event === 'SIGNED_IN') {
+                     // Only fetch if not already set (to avoid overwriting optimistic updates)
                      const { data: profile } = await supabase
                         .from('profiles')
                         .select('*')
                         .eq('id', session.user.id)
                         .single();
+                     
                      if (profile) {
                         setCurrentUser({
                             id: profile.id,
@@ -113,11 +137,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
             });
             
-            // Carregar lista de usuários se for admin (simplificado para demo)
-            if (session?.user) {
-                 // Check admin role locally first or assume fetch
-            }
-
         } else {
             // MODO LOCAL STORAGE
             const localUsers = loadLocalUsers();
@@ -213,8 +232,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
              if (data && data.email) {
                  emailToLogin = data.email;
              } else {
-                 // Se não achar, deixa falhar no signIn ou lança erro aqui
-                 throw new Error("Usuário não encontrado. Tente entrar com o E-mail.");
+                 // Se não achar, lança erro amigável
+                 throw new Error("Usuário não encontrado. Verifique o nome de usuário ou tente o e-mail.");
              }
         }
 
@@ -260,8 +279,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         if (error) throw new Error(error.message);
+        
         if (authData.user) {
-            return {
+            // OPTIMISTIC UPDATE:
+            // We manually create the user object and set it as current
+            // This allows immediate access without waiting for DB triggers/webhooks
+            const newUser: User = {
                 id: authData.user.id,
                 username: data.username,
                 name: data.name,
@@ -273,6 +296,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 subscriptionExpiresAt: null,
                 createdAt: new Date().toISOString()
             };
+            setCurrentUser(newUser);
+            return newUser;
         }
         throw new Error("Erro ao criar conta.");
 
