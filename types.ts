@@ -83,10 +83,13 @@ export interface Holding {
   transactions: Transaction[];
   dayChange: number; // In native currency
   dayChangePercent: number;
-  // USD Converted Values
+  
+  // USD Converted Values (Added to fix TS Build Error)
   currentValueUSD: number;
   totalInvestedUSD: number;
   totalGainLossUSD: number;
+  dayChangeUSD: number;
+
   // Subscription Logic
   isLocked?: boolean; // Se true, não conta para o total e aparece borrado
 }
