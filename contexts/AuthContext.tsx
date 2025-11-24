@@ -117,18 +117,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setCurrentUser(optimisticUser);
 
                 // B. Background Sync with DB (Lazy Load)
-                supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', session.user.id)
-                    .single()
-                    .then(({ data: profile }) => {
-                        if (profile) {
+                // Fix: Use async IIFE to prevent TS2339 build error with promise chaining
+                (async () => {
+                    try {
+                        const { data: profile, error } = await supabase
+                            .from('profiles')
+                            .select('*')
+                            .eq('id', session.user.id)
+                            .single();
+                        
+                        if (profile && !error) {
                             const syncedUser = mapSessionToUser(session, profile);
                             setCurrentUser(syncedUser);
                         }
-                    })
-                    .catch(err => console.warn("Background profile sync failed, keeping session data.", err));
+                    } catch (err) {
+                        console.warn("Background profile sync failed, keeping session data.", err);
+                    }
+                })();
             }
 
             // 2. Setup Listener for Future Changes
@@ -137,15 +142,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     setCurrentUser(null);
                 } else if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
                      // On refresh, try to sync DB but DO NOT LOGOUT on failure
-                     const { data: profile } = await supabase
-                        .from('profiles')
-                        .select('*')
-                        .eq('id', session.user.id)
-                        .single();
-                     
-                     // Always use session if profile fetch fails
-                     const user = mapSessionToUser(session, profile);
-                     setCurrentUser(user);
+                     try {
+                        const { data: profile } = await supabase
+                            .from('profiles')
+                            .select('*')
+                            .eq('id', session.user.id)
+                            .single();
+                        
+                        // Always use session if profile fetch fails
+                        const user = mapSessionToUser(session, profile);
+                        setCurrentUser(user);
+                     } catch (e) {
+                        const user = mapSessionToUser(session);
+                        setCurrentUser(user);
+                     }
                 }
             });
             
