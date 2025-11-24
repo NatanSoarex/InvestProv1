@@ -9,7 +9,7 @@ interface AdminPanelProps {
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
-    const { users, currentUser, updateUserSubscription, banUser, isPremium, suggestions, refreshUserData } = useAuth();
+    const { users, currentUser, updateUserSubscription, banUser, isPremium, suggestions, refreshUserData, dbError } = useAuth();
     const [selectedDays, setSelectedDays] = useState(30);
     const [searchTerm, setSearchTerm] = useState('');
     const [activeTab, setActiveTab] = useState<'USERS' | 'SUGGESTIONS'>('USERS');
@@ -29,8 +29,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         setIsRefreshing(false);
     };
 
-    // Script SQL Robusto e Limpo para Configuração do Banco
-    const sqlCommand = `-- 1. Tabelas Principais (Se nao existirem)
+    // Script SQL Completo e Seguro
+    const sqlCommand = `-- 1. Tabelas Principais
 create table if not exists public.profiles (
   id uuid references auth.users on delete cascade not null primary key,
   username text unique,
@@ -69,7 +69,7 @@ create table if not exists public.suggestions (
   created_at timestamptz default now()
 );
 
--- 2. Limpar Politicas Antigas (Evita erro 42710)
+-- 2. Limpar Políticas Antigas (Evita erros)
 drop policy if exists "Perfis publicos" on public.profiles;
 drop policy if exists "Usuario atualiza proprio perfil" on public.profiles;
 drop policy if exists "Admin ve todos perfis" on public.profiles;
@@ -85,33 +85,29 @@ drop policy if exists "Usuario deleta da watchlist" on public.watchlist;
 drop policy if exists "Admin ve sugestoes" on public.suggestions;
 drop policy if exists "Usuario envia sugestao" on public.suggestions;
 
--- 3. Habilitar Seguranca (RLS)
+-- 3. Habilitar Segurança (RLS)
 alter table public.profiles enable row level security;
 alter table public.transactions enable row level security;
 alter table public.watchlist enable row level security;
 alter table public.suggestions enable row level security;
 
--- 4. Criar Novas Politicas
--- Perfis
+-- 4. Criar Novas Políticas
 create policy "Perfis publicos" on public.profiles for select using (true);
 create policy "Usuario atualiza proprio perfil" on public.profiles for update using (auth.uid() = id);
 create policy "Admin ve todos perfis" on public.profiles for select using ((select is_admin from public.profiles where id = auth.uid()) = true);
 
--- Transacoes
 create policy "Usuario ve suas transacoes" on public.transactions for select using (auth.uid() = user_id);
 create policy "Usuario cria suas transacoes" on public.transactions for insert with check (auth.uid() = user_id);
 create policy "Usuario deleta suas transacoes" on public.transactions for delete using (auth.uid() = user_id);
 
--- Watchlist
 create policy "Usuario ve sua watchlist" on public.watchlist for select using (auth.uid() = user_id);
 create policy "Usuario cria na watchlist" on public.watchlist for insert with check (auth.uid() = user_id);
 create policy "Usuario deleta da watchlist" on public.watchlist for delete using (auth.uid() = user_id);
 
--- Sugestoes
 create policy "Admin ve sugestoes" on public.suggestions for select using ((select is_admin from public.profiles where id = auth.uid()) = true);
 create policy "Usuario envia sugestao" on public.suggestions for insert with check (auth.uid() = user_id);
 
--- 5. Gatilho Automatico (Trigger)
+-- 5. Gatilho Automático (Trigger)
 create or replace function public.handle_new_user() 
 returns trigger as $$
 begin
@@ -140,7 +136,6 @@ create trigger on_auth_user_created
         setTimeout(() => setCopied(false), 2000);
     };
 
-    // Reparo de Usuarios Fantasmas (Para quando Auth existe mas Profile nao)
     const repairSQL = `
 insert into public.profiles (id, email, created_at)
 select id, email, created_at
@@ -150,12 +145,11 @@ where id not in (select id from public.profiles);
 
     const handleCopyRepair = () => {
         navigator.clipboard.writeText(repairSQL);
-        alert("Script de Reparo Copiado! Rode no Supabase SQL Editor.");
+        alert("Script de Reparo Copiado!");
     };
 
-    // Verifica se o problema é filtro ou banco de dados vazio
-    const isDatabaseIssue = users.length <= 1 && !searchTerm && !isRefreshing; 
-    const isSearchEmpty = users.length > 1 && filteredUsers.length === 0;
+    // Diagnóstico de Erro
+    const showDbSetup = dbError && (dbError.includes('42P01') || users.length === 0);
 
     return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -172,7 +166,6 @@ where id not in (select id from public.profiles);
                     <button onClick={onClose} className="text-brand-secondary hover:text-brand-text text-2xl">&times;</button>
                 </div>
 
-                {/* TABS NAVIGATION */}
                 <div className="flex border-b border-brand-border bg-brand-surface/50">
                     <button 
                         onClick={() => setActiveTab('USERS')}
@@ -204,7 +197,7 @@ where id not in (select id from public.profiles);
                             <div className="mb-4 flex gap-3">
                                 <input 
                                     type="text" 
-                                    placeholder="Buscar usuário por nome ou @..." 
+                                    placeholder="Buscar usuário..." 
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                     className="flex-1 bg-brand-bg border border-brand-border rounded-lg px-4 py-2 text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary"
@@ -308,52 +301,29 @@ where id not in (select id from public.profiles);
                                         ) : (
                                             <tr>
                                                 <td colSpan={4} className="p-8 text-center text-brand-secondary">
-                                                    {isDatabaseIssue ? (
+                                                    {showDbSetup ? (
                                                         <div className="flex flex-col items-center gap-4 bg-brand-surface/50 p-6 rounded-xl border border-brand-border">
-                                                            <div className="p-3 bg-brand-bg rounded-full">
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 opacity-50 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                                                </svg>
-                                                            </div>
-                                                            <div>
-                                                                <p className="font-bold text-brand-text mb-1">Configuração do Banco de Dados Necessária</p>
-                                                                <p className="text-xs opacity-80 max-w-md mx-auto mb-3">
-                                                                    Parece que as tabelas ou permissões (RLS) não estão configuradas corretamente no Supabase.
-                                                                </p>
-                                                                <div className="flex flex-col gap-2 items-center w-full">
-                                                                    <pre className="bg-black/30 p-3 rounded text-[10px] font-mono w-full text-left overflow-x-auto border border-brand-border/30 block text-brand-secondary h-32">
-                                                                        {sqlCommand}
-                                                                    </pre>
-                                                                    <button 
-                                                                        onClick={handleCopySQL}
-                                                                        className={`w-full py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2 ${copied ? 'bg-brand-success text-white' : 'bg-brand-primary text-white hover:bg-brand-primary/80'}`}
-                                                                    >
-                                                                        {copied ? (
-                                                                            <>
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                                                                                Copiado!
-                                                                            </>
-                                                                        ) : (
-                                                                            <>
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
-                                                                                Copiar Script de Instalação
-                                                                            </>
-                                                                        )}
-                                                                    </button>
-                                                                    <p className="text-[10px] text-brand-secondary mt-1">Cole este código no <b>SQL Editor</b> do Supabase e clique em Run.</p>
-                                                                </div>
+                                                            <p className="font-bold text-brand-text mb-1">Configuração Necessária</p>
+                                                            <div className="flex flex-col gap-2 items-center w-full">
+                                                                <pre className="bg-black/30 p-3 rounded text-[10px] font-mono w-full text-left overflow-x-auto border border-brand-border/30 block text-brand-secondary h-32">
+                                                                    {sqlCommand}
+                                                                </pre>
+                                                                <button 
+                                                                    onClick={handleCopySQL}
+                                                                    className="w-full py-2 rounded-lg bg-brand-primary text-white font-bold"
+                                                                >
+                                                                    {copied ? "Copiado!" : "Copiar Script SQL"}
+                                                                </button>
                                                             </div>
                                                         </div>
                                                     ) : (
                                                         <div className="py-10">
-                                                            {/* Botão de Emergência para Usuários Fantasmas */}
-                                                            <p className="text-lg font-medium mb-2">Nenhum usuário encontrado.</p>
-                                                            <p className="text-sm opacity-60 mb-6">Se houver usuários registrados mas não aparecem aqui, pode haver uma dessincronização.</p>
+                                                            <p className="text-lg font-medium mb-2">Nenhum usuário na lista.</p>
                                                             <button 
                                                                 onClick={handleCopyRepair}
                                                                 className="text-xs text-brand-primary hover:underline opacity-80"
                                                             >
-                                                                Copiar Script de Reparo de Usuários
+                                                                Reparar Usuários Invisíveis
                                                             </button>
                                                         </div>
                                                     )}
@@ -370,15 +340,12 @@ where id not in (select id from public.profiles);
                     {activeTab === 'SUGGESTIONS' && (
                         <div className="flex-1 overflow-y-auto space-y-4 pr-2">
                             {suggestions.length === 0 ? (
-                                <div className="text-center py-20 text-brand-secondary opacity-50 flex flex-col items-center">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                                    </svg>
-                                    <p className="text-lg font-medium">Nenhuma sugestão enviada ainda.</p>
+                                <div className="text-center py-20 text-brand-secondary opacity-50">
+                                    <p>Nenhuma sugestão ainda.</p>
                                 </div>
                             ) : (
                                 suggestions.map((sug) => (
-                                    <div key={sug.id} className="bg-brand-surface border border-brand-border p-4 rounded-xl shadow-lg relative overflow-hidden group hover:border-brand-primary/50 transition-colors">
+                                    <div key={sug.id} className="bg-brand-surface border border-brand-border p-4 rounded-xl shadow-lg">
                                         <div className="flex justify-between items-start mb-2">
                                             <div className="flex items-center gap-2">
                                                 <div className="w-8 h-8 rounded-full bg-brand-primary/10 flex items-center justify-center text-brand-primary font-bold text-xs">

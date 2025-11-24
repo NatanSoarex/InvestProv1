@@ -18,6 +18,7 @@ export interface AuthContextType {
   updateEmail: (userId: string, newEmail: string) => Promise<void>;
   addSuggestion: (text: string, user: User) => void;
   refreshUserData: () => Promise<void>; 
+  dbError: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,6 +28,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [users, setUsers] = useState<User[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dbError, setDbError] = useState<string | null>(null);
 
   // --- LOCAL STORAGE HELPERS (Modo Offline) ---
   const loadLocalUsers = () => {
@@ -117,7 +119,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const optimisticUser = mapSessionToUser(session);
                 setCurrentUser(optimisticUser);
 
-                // B. Sincronização em Segundo Plano (Async/Await para evitar erro de Build TS)
+                // B. Sincronização em Segundo Plano (Async/Await)
                 (async () => {
                     try {
                         const { data: profile, error } = await supabase
@@ -141,7 +143,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (event === 'SIGNED_OUT') {
                     setCurrentUser(null);
                 } else if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
-                     // Tenta atualizar perfil completo, mas SEMPRE garante o login com metadados se falhar
                      try {
                         const { data: profile } = await supabase
                             .from('profiles')
@@ -149,11 +150,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                             .eq('id', session.user.id)
                             .single();
                         
-                        // Se achou perfil no banco, usa ele. Se não, usa os dados da sessão.
                         const user = mapSessionToUser(session, profile || undefined);
                         setCurrentUser(user);
                      } catch (e) {
-                        // Falha de rede ou banco: Usa dados da sessão para não deslogar
                         const user = mapSessionToUser(session);
                         setCurrentUser(user);
                      }
@@ -192,6 +191,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Função para atualizar dados de usuários e sugestões (Disponível para Admin)
   const refreshUserData = useCallback(async () => {
       if (!currentUser?.isAdmin) return;
+      setDbError(null);
       
       if (isSupabaseConfigured) {
           // Busca perfis
@@ -199,6 +199,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           
           if (error) {
               console.error("Erro ao buscar perfis (Admin):", error.message);
+              setDbError(error.code || error.message);
           }
           
           if (data && data.length > 0) {
@@ -216,11 +217,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }));
               setUsers(mappedUsers);
           } else if ((!data || data.length === 0) && !error) {
-              // Se lista vazia e sem erro (RLS pode retornar array vazio)
-              // Não limpamos 'users' imediatamente para evitar piscar, a menos que seja confirmado
-              console.warn("Lista de usuários vazia. Verifique permissões RLS no Supabase.");
-              // Mantemos o usuário atual na lista para o admin não se sentir 'excluído'
-              setUsers([currentUser]); 
+              console.warn("Lista de usuários vazia. Possível problema de RLS.");
+              // Tenta manter pelo menos o usuário atual visível
+              if (currentUser) setUsers([currentUser]);
           }
 
           // Busca sugestões
@@ -238,7 +237,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
   }, [currentUser]);
 
-  // Carregar lista de usuários para Admin na montagem ou quando muda user
+  // Carregar lista de usuários para Admin
   useEffect(() => {
       if (currentUser?.isAdmin) {
           refreshUserData();
@@ -255,9 +254,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Tenta resolver Username -> Email se não for formato de email
         if (!username.includes('@') || !username.includes('.')) {
              const targetUsername = username.startsWith('@') ? username : `@${username}`;
-             
              try {
-                 // Tenta buscar email (pode falhar por RLS se não for admin/public)
                  const { data } = await supabase
                     .from('profiles')
                     .select('email')
@@ -270,7 +267,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                      throw new Error("USER_NOT_FOUND");
                  }
              } catch (e) {
-                 throw new Error("Não foi possível encontrar pelo nome de usuário (Segurança Cloud). Por favor, use o E-MAIL para entrar.");
+                 throw new Error("Não foi possível encontrar pelo nome de usuário. Por favor, use o E-MAIL para entrar.");
              }
         }
 
@@ -299,7 +296,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const securityCode = generateUniqueSecurityCode(users); 
 
     if (isSupabaseConfigured) {
-        // --- CHECK DUPLICATES BEFORE SIGNUP (STRICT) ---
+        // --- CHECK DUPLICATES (Frontend Pre-Check) ---
         try {
             const { data: existingUser } = await supabase
                 .from('profiles')
@@ -311,14 +308,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 throw new Error("Usuário ou E-mail já cadastrados. Tente recuperar sua senha.");
             }
         } catch (e: any) {
-            // Se o erro for de permissão (RLS), ignoramos e deixamos o Supabase Auth tentar (ele valida email duplicado)
             if (e.message && !e.message.includes("Usuário ou E-mail já cadastrados")) {
-                console.warn("Pré-checagem de duplicidade falhou (RLS?), prosseguindo com Auth.", e);
+                // Ignora erro de permissão na verificação e deixa o Auth cuidar
             } else {
-                throw e; // Repassa o erro de duplicidade real
+                throw e;
             }
         }
 
+        // 1. Create Auth User
         const { data: authData, error } = await supabase.auth.signUp({
             email: data.email,
             password: data.password,
@@ -334,7 +331,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (error) throw new Error(error.message);
         
         if (authData.user) {
-            // Login Otimista: Define usuário imediatamente para evitar espera do banco de dados
+            // 2. CRITICAL FIX: Manual Profile Insert (Fallback for Trigger)
+            // Garantia dupla: Se o trigger falhar, o frontend insere.
+            try {
+                const isAdmin = checkIsAdminLocal(data.username);
+                await supabase.from('profiles').insert({
+                    id: authData.user.id,
+                    email: data.email,
+                    username: data.username,
+                    name: data.name,
+                    security_code: securityCode,
+                    is_admin: isAdmin
+                });
+            } catch (profileErr) {
+                console.log("Profile insert fallback skipped (likely created by trigger):", profileErr);
+            }
+
+            // 3. Set Local User Immediately (Optimistic Login)
             const newUser: User = {
                 id: authData.user.id,
                 username: data.username,
@@ -350,10 +363,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setCurrentUser(newUser);
             return newUser;
         }
-        throw new Error("Erro ao criar conta.");
+        throw new Error("Erro desconhecido ao criar conta.");
 
     } else {
-        await new Promise(resolve => setTimeout(resolve, 800));
+        await new Promise(resolve => setTimeout(resolve, 200));
         if (users.some(u => u.username.toLowerCase() === data.username.toLowerCase())) throw new Error("Usuário já em uso.");
         if (users.some(u => u.email.toLowerCase() === data.email.toLowerCase())) throw new Error("Email já cadastrado.");
 
@@ -376,12 +389,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    // UI First: Remove usuário da tela imediatamente
+    setCurrentUser(null);
+    
+    // Background: Limpa sessão no servidor
     if (isSupabaseConfigured) {
-        await supabase.auth.signOut();
+        try {
+            await supabase.auth.signOut();
+        } catch (e) { }
     } else {
         localStorage.removeItem('provest_session');
     }
-    setCurrentUser(null);
   };
 
   const updateUserSubscription = async (userId: string, days: number) => {
@@ -511,7 +529,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, users, suggestions, login, register, logout, updateUserSubscription, banUser, isPremium, verifyUserForSupport, resetPassword, updateEmail, addSuggestion, refreshUserData }}>
+    <AuthContext.Provider value={{ currentUser, users, suggestions, login, register, logout, updateUserSubscription, banUser, isPremium, verifyUserForSupport, resetPassword, updateEmail, addSuggestion, refreshUserData, dbError }}>
       {!loading && children}
     </AuthContext.Provider>
   );
