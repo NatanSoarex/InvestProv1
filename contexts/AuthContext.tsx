@@ -5,8 +5,8 @@ import { supabase, isSupabaseConfigured } from '../services/supabase';
 
 export interface AuthContextType {
   currentUser: User | null;
-  users: User[]; // Lista de todos os usuários para o admin
-  suggestions: Suggestion[]; // Lista de sugestões
+  users: User[]; 
+  suggestions: Suggestion[]; 
   login: (username: string, password: string) => Promise<boolean>;
   register: (data: Omit<User, 'id' | 'isAdmin' | 'isBanned' | 'subscriptionExpiresAt' | 'createdAt' | 'securityCode'>) => Promise<User>; 
   logout: () => void;
@@ -60,7 +60,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const mapSessionToUser = (session: any, dbProfile?: any): User => {
       const meta = session.user.user_metadata || {};
       
-      // Use DB profile if available, otherwise fallback to metadata
+      // Prioridade: Perfil do DB -> Metadados da Sessão -> Email do Auth
       const username = dbProfile?.username || meta.username || session.user.email;
       const name = dbProfile?.name || meta.name || 'Usuário';
       const securityCode = dbProfile?.security_code || meta.security_code || '------';
@@ -98,7 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 securityCode: '000000',
                 isAdmin: true,
                 isBanned: false,
-                subscriptionExpiresAt: new Date(Date.now() + 31536000000).toISOString(), // 1 year
+                subscriptionExpiresAt: new Date(Date.now() + 31536000000).toISOString(),
                 createdAt: new Date().toISOString()
             });
             setLoading(false);
@@ -108,16 +108,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (isSupabaseConfigured) {
             // MODO SUPABASE (Cloud)
             
-            // 1. Get Session from Local Storage (Fastest)
+            // 1. Tenta recuperar sessão existente (Rápido)
             const { data: { session } } = await supabase.auth.getSession();
             
             if (session?.user) {
-                // A. Immediate Login with Metadata (Optimistic)
+                // A. Login Imediato com Metadados (Otimista)
                 const optimisticUser = mapSessionToUser(session);
                 setCurrentUser(optimisticUser);
 
-                // B. Background Sync with DB (Lazy Load)
-                // Fix: Use async IIFE to prevent TS2339 build error with promise chaining
+                // B. Sincronização em Segundo Plano (Async/Await para evitar erro de Build TS)
                 (async () => {
                     try {
                         const { data: profile, error } = await supabase
@@ -131,17 +130,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                             setCurrentUser(syncedUser);
                         }
                     } catch (err) {
-                        console.warn("Background profile sync failed, keeping session data.", err);
+                        console.warn("Background profile sync failed, maintaining session state.", err);
                     }
                 })();
             }
 
-            // 2. Setup Listener for Future Changes
+            // 2. Listener para Mudanças de Estado
             const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
                 if (event === 'SIGNED_OUT') {
                     setCurrentUser(null);
                 } else if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
-                     // On refresh, try to sync DB but DO NOT LOGOUT on failure
+                     // Tenta atualizar perfil completo, mas SEMPRE garante o login com metadados se falhar
                      try {
                         const { data: profile } = await supabase
                             .from('profiles')
@@ -149,10 +148,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                             .eq('id', session.user.id)
                             .single();
                         
-                        // Always use session if profile fetch fails
-                        const user = mapSessionToUser(session, profile);
+                        // Se achou perfil no banco, usa ele. Se não, usa os dados da sessão.
+                        const user = mapSessionToUser(session, profile || undefined);
                         setCurrentUser(user);
                      } catch (e) {
+                        // Falha de rede ou banco: Usa dados da sessão para não deslogar
                         const user = mapSessionToUser(session);
                         setCurrentUser(user);
                      }
@@ -233,22 +233,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isSupabaseConfigured) {
         let emailToLogin = username;
 
-        // Try to resolve Username -> Email
+        // Tenta resolver Username -> Email se não for formato de email
         if (!username.includes('@') || !username.includes('.')) {
              const targetUsername = username.startsWith('@') ? username : `@${username}`;
              
-             // WARNING: RLS might block this query for unauthenticated users
-             const { data, error } = await supabase
-                .from('profiles')
-                .select('email')
-                .eq('username', targetUsername)
-                .single();
-             
-             if (data && data.email) {
-                 emailToLogin = data.email;
-             } else {
-                 // If we can't find the email (likely due to RLS security), fail gracefully
-                 throw new Error("Não foi possível encontrar pelo nome de usuário (segurança da nuvem). Por favor, tente entrar usando seu E-MAIL.");
+             try {
+                 // Tenta buscar email (pode falhar por RLS se não for admin/public)
+                 const { data } = await supabase
+                    .from('profiles')
+                    .select('email')
+                    .eq('username', targetUsername)
+                    .single();
+                 
+                 if (data && data.email) {
+                     emailToLogin = data.email;
+                 } else {
+                     throw new Error("USER_NOT_FOUND");
+                 }
+             } catch (e) {
+                 throw new Error("Não foi possível encontrar pelo nome de usuário (Segurança Cloud). Por favor, use o E-MAIL para entrar.");
              }
         }
 
@@ -292,7 +295,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (error) throw new Error(error.message);
         
         if (authData.user) {
-            // Optimistic Login: Set User Immediately to prevent "loading" freeze
+            // Login Otimista: Define usuário imediatamente para evitar espera do banco de dados
             const newUser: User = {
                 id: authData.user.id,
                 username: data.username,
