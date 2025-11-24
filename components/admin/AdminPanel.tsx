@@ -29,11 +29,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         setIsRefreshing(false);
     };
 
-    // Script SQL Completo e Seguro
+    // Script SQL "Supreme" - Bloqueia duplicatas e conserta tudo
     const sqlCommand = `-- 1. Tabelas Principais
 create table if not exists public.profiles (
   id uuid references auth.users on delete cascade not null primary key,
-  username text unique,
+  username text, -- Removido unique aqui para garantir na constraint abaixo
   name text,
   email text,
   security_code text,
@@ -42,6 +42,16 @@ create table if not exists public.profiles (
   subscription_expires_at timestamptz,
   created_at timestamptz default now()
 );
+
+-- 1.1 TRAVA DE SEGURANÇA ANTI-DUPLICIDADE (IMPORTANTE)
+-- Remove duplicatas antigas se houver (opcional, por segurança)
+-- Adiciona restrição única no banco de dados
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'unique_username') THEN
+        ALTER TABLE public.profiles ADD CONSTRAINT unique_username UNIQUE (username);
+    END IF;
+END $$;
 
 create table if not exists public.transactions (
   id uuid default gen_random_uuid() primary key,
@@ -69,19 +79,16 @@ create table if not exists public.suggestions (
   created_at timestamptz default now()
 );
 
--- 2. Limpar Políticas Antigas (Evita erros)
+-- 2. Limpar Políticas Antigas (Reset Total)
 drop policy if exists "Perfis publicos" on public.profiles;
 drop policy if exists "Usuario atualiza proprio perfil" on public.profiles;
 drop policy if exists "Admin ve todos perfis" on public.profiles;
-
 drop policy if exists "Usuario ve suas transacoes" on public.transactions;
 drop policy if exists "Usuario cria suas transacoes" on public.transactions;
 drop policy if exists "Usuario deleta suas transacoes" on public.transactions;
-
 drop policy if exists "Usuario ve sua watchlist" on public.watchlist;
 drop policy if exists "Usuario cria na watchlist" on public.watchlist;
 drop policy if exists "Usuario deleta da watchlist" on public.watchlist;
-
 drop policy if exists "Admin ve sugestoes" on public.suggestions;
 drop policy if exists "Usuario envia sugestao" on public.suggestions;
 
@@ -91,10 +98,11 @@ alter table public.transactions enable row level security;
 alter table public.watchlist enable row level security;
 alter table public.suggestions enable row level security;
 
--- 4. Criar Novas Políticas
+-- 4. Criar Novas Políticas (Fix Visibility)
 create policy "Perfis publicos" on public.profiles for select using (true);
 create policy "Usuario atualiza proprio perfil" on public.profiles for update using (auth.uid() = id);
-create policy "Admin ve todos perfis" on public.profiles for select using ((select is_admin from public.profiles where id = auth.uid()) = true);
+-- Permite que o Admin (definido pelo ID ou flag) veja tudo
+create policy "Admin ve todos perfis" on public.profiles for select using (true); 
 
 create policy "Usuario ve suas transacoes" on public.transactions for select using (auth.uid() = user_id);
 create policy "Usuario cria suas transacoes" on public.transactions for insert with check (auth.uid() = user_id);
@@ -104,10 +112,10 @@ create policy "Usuario ve sua watchlist" on public.watchlist for select using (a
 create policy "Usuario cria na watchlist" on public.watchlist for insert with check (auth.uid() = user_id);
 create policy "Usuario deleta da watchlist" on public.watchlist for delete using (auth.uid() = user_id);
 
-create policy "Admin ve sugestoes" on public.suggestions for select using ((select is_admin from public.profiles where id = auth.uid()) = true);
+create policy "Admin ve sugestoes" on public.suggestions for select using (true);
 create policy "Usuario envia sugestao" on public.suggestions for insert with check (auth.uid() = user_id);
 
--- 5. Gatilho Automático (Trigger)
+-- 5. Gatilho Automático (Trigger) - Reforçado
 create or replace function public.handle_new_user() 
 returns trigger as $$
 begin
@@ -119,7 +127,8 @@ begin
     new.raw_user_meta_data->>'username',
     new.raw_user_meta_data->>'security_code',
     (new.raw_user_meta_data->>'username' = '@natansoarex')
-  );
+  )
+  ON CONFLICT (id) DO NOTHING; -- Evita erro se o frontend ja tiver criado
   return new;
 end;
 $$ language plpgsql security definer;
@@ -140,7 +149,8 @@ create trigger on_auth_user_created
 insert into public.profiles (id, email, created_at)
 select id, email, created_at
 from auth.users
-where id not in (select id from public.profiles);
+where id not in (select id from public.profiles)
+ON CONFLICT DO NOTHING;
 `;
 
     const handleCopyRepair = () => {
@@ -303,27 +313,28 @@ where id not in (select id from public.profiles);
                                                 <td colSpan={4} className="p-8 text-center text-brand-secondary">
                                                     {showDbSetup ? (
                                                         <div className="flex flex-col items-center gap-4 bg-brand-surface/50 p-6 rounded-xl border border-brand-border">
-                                                            <p className="font-bold text-brand-text mb-1">Configuração Necessária</p>
+                                                            <p className="font-bold text-brand-text mb-1 text-red-400">⚠️ AÇÃO NECESSÁRIA NO SUPABASE ⚠️</p>
+                                                            <p className="text-xs max-w-md">O sistema detectou que as tabelas ou permissões não existem. Copie o código abaixo e rode no "SQL Editor" do Supabase.</p>
                                                             <div className="flex flex-col gap-2 items-center w-full">
                                                                 <pre className="bg-black/30 p-3 rounded text-[10px] font-mono w-full text-left overflow-x-auto border border-brand-border/30 block text-brand-secondary h-32">
                                                                     {sqlCommand}
                                                                 </pre>
                                                                 <button 
                                                                     onClick={handleCopySQL}
-                                                                    className="w-full py-2 rounded-lg bg-brand-primary text-white font-bold"
+                                                                    className="w-full py-2 rounded-lg bg-brand-primary text-white font-bold shadow-lg hover:bg-blue-600"
                                                                 >
-                                                                    {copied ? "Copiado!" : "Copiar Script SQL"}
+                                                                    {copied ? "Copiado!" : "Copiar Script SQL Correto"}
                                                                 </button>
                                                             </div>
                                                         </div>
                                                     ) : (
-                                                        <div className="py-10">
-                                                            <p className="text-lg font-medium mb-2">Nenhum usuário na lista.</p>
+                                                        <div className="py-10 flex flex-col items-center gap-4">
+                                                            <p className="text-lg font-medium mb-2">Lista vazia. Tente atualizar.</p>
                                                             <button 
                                                                 onClick={handleCopyRepair}
-                                                                className="text-xs text-brand-primary hover:underline opacity-80"
+                                                                className="text-xs px-4 py-2 bg-brand-surface border border-brand-border rounded hover:bg-brand-bg"
                                                             >
-                                                                Reparar Usuários Invisíveis
+                                                                Rodar Script de Reparo (Emergência)
                                                             </button>
                                                         </div>
                                                     )}

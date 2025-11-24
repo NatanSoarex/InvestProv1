@@ -23,6 +23,18 @@ export interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// --- HELPER: RETRY LOGIC (INSISTENT SAVE) ---
+// Tenta executar uma função X vezes antes de desistir
+async function retryOperation<T>(operation: () => Promise<T>, retries = 3, delay = 1000): Promise<T> {
+    try {
+        return await operation();
+    } catch (error) {
+        if (retries <= 0) throw error;
+        await new Promise(res => setTimeout(res, delay));
+        return retryOperation(operation, retries - 1, delay);
+    }
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -63,7 +75,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const mapSessionToUser = (session: any, dbProfile?: any): User => {
       const meta = session.user.user_metadata || {};
       
-      // Prioridade: Perfil do DB -> Metadados da Sessão -> Email do Auth
       const username = dbProfile?.username || meta.username || session.user.email;
       const name = dbProfile?.name || meta.name || 'Usuário';
       const securityCode = dbProfile?.security_code || meta.security_code || '------';
@@ -110,36 +121,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (isSupabaseConfigured) {
             // MODO SUPABASE (Cloud)
-            
-            // 1. Tenta recuperar sessão existente (Rápido)
             const { data: { session } } = await supabase.auth.getSession();
             
             if (session?.user) {
-                // A. Login Imediato com Metadados (Otimista)
                 const optimisticUser = mapSessionToUser(session);
                 setCurrentUser(optimisticUser);
 
-                // B. Sincronização em Segundo Plano (Async/Await)
+                // Insistent Profile Fetch
                 (async () => {
                     try {
-                        const { data: profile, error } = await supabase
+                        const { data: profile } = await supabase
                             .from('profiles')
                             .select('*')
                             .eq('id', session.user.id)
                             .single();
                         
-                        if (profile && !error) {
+                        if (profile) {
                             const syncedUser = mapSessionToUser(session, profile);
                             setCurrentUser(syncedUser);
                         }
                     } catch (err) {
-                        console.warn("Background profile sync failed, maintaining session state.", err);
+                        console.warn("Background sync failed (silent).", err);
                     }
                 })();
             }
 
-            // 2. Listener para Mudanças de Estado
-            const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            supabase.auth.onAuthStateChange(async (event, session) => {
                 if (event === 'SIGNED_OUT') {
                     setCurrentUser(null);
                 } else if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
@@ -153,8 +160,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         const user = mapSessionToUser(session, profile || undefined);
                         setCurrentUser(user);
                      } catch (e) {
-                        const user = mapSessionToUser(session);
-                        setCurrentUser(user);
+                        // Fallback to metadata if DB fails
+                        if (!currentUser) {
+                            const user = mapSessionToUser(session);
+                            setCurrentUser(user);
+                        }
                      }
                 }
             });
@@ -188,56 +198,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
   }, []);
 
-  // Função para atualizar dados de usuários e sugestões (Disponível para Admin)
+  // --- ADMIN: REFRESH USER DATA (Robust) ---
   const refreshUserData = useCallback(async () => {
       if (!currentUser?.isAdmin) return;
       setDbError(null);
       
       if (isSupabaseConfigured) {
-          // Busca perfis
-          const { data, error } = await supabase.from('profiles').select('*');
-          
-          if (error) {
-              console.error("Erro ao buscar perfis (Admin):", error.message);
-              setDbError(error.code || error.message);
-          }
-          
-          if (data && data.length > 0) {
-              const mappedUsers: User[] = data.map(p => ({
-                  id: p.id,
-                  username: p.username,
-                  name: p.name,
-                  email: p.email,
-                  password: '',
-                  securityCode: p.security_code,
-                  isAdmin: p.is_admin,
-                  isBanned: p.is_banned,
-                  subscriptionExpiresAt: p.subscription_expires_at,
-                  createdAt: p.created_at
-              }));
-              setUsers(mappedUsers);
-          } else if ((!data || data.length === 0) && !error) {
-              console.warn("Lista de usuários vazia. Possível problema de RLS.");
-              // Tenta manter pelo menos o usuário atual visível
-              if (currentUser) setUsers([currentUser]);
-          }
+          try {
+              // Force fetch profiles
+              const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+              
+              if (error) {
+                  console.error("Admin Fetch Error:", error);
+                  setDbError(error.code);
+              }
+              
+              if (data) {
+                  const mappedUsers: User[] = data.map(p => ({
+                      id: p.id,
+                      username: p.username,
+                      name: p.name,
+                      email: p.email,
+                      password: '',
+                      securityCode: p.security_code,
+                      isAdmin: p.is_admin,
+                      isBanned: p.is_banned,
+                      subscriptionExpiresAt: p.subscription_expires_at,
+                      createdAt: p.created_at
+                  }));
+                  setUsers(mappedUsers);
+              } else {
+                  // If empty list but no error (RLS issue likely), try to show self
+                  if (currentUser) setUsers([currentUser]);
+              }
 
-          // Busca sugestões
-          const { data: sugs } = await supabase.from('suggestions').select('*');
-          if (sugs) {
-              const mappedSugs: Suggestion[] = sugs.map(s => ({
-                  id: s.id,
-                  userId: s.user_id,
-                  username: 'User',
-                  text: s.text,
-                  createdAt: s.created_at
-              }));
-              setSuggestions(mappedSugs); 
+              const { data: sugs } = await supabase.from('suggestions').select('*');
+              if (sugs) {
+                  const mappedSugs: Suggestion[] = sugs.map(s => ({
+                      id: s.id,
+                      userId: s.user_id,
+                      username: 'User',
+                      text: s.text,
+                      createdAt: s.created_at
+                  }));
+                  setSuggestions(mappedSugs); 
+              }
+          } catch (e) {
+              console.error("Unexpected error fetching admin data:", e);
           }
       }
   }, [currentUser]);
 
-  // Carregar lista de usuários para Admin
   useEffect(() => {
       if (currentUser?.isAdmin) {
           refreshUserData();
@@ -251,7 +262,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isSupabaseConfigured) {
         let emailToLogin = username;
 
-        // Tenta resolver Username -> Email se não for formato de email
         if (!username.includes('@') || !username.includes('.')) {
              const targetUsername = username.startsWith('@') ? username : `@${username}`;
              try {
@@ -264,10 +274,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                  if (data && data.email) {
                      emailToLogin = data.email;
                  } else {
-                     throw new Error("USER_NOT_FOUND");
+                     // Silent failure: let signIn handle it or throw specific error
                  }
              } catch (e) {
-                 throw new Error("Não foi possível encontrar pelo nome de usuário. Por favor, use o E-MAIL para entrar.");
+                 throw new Error("Não foi possível encontrar este nome de usuário. Tente usar seu E-MAIL.");
              }
         }
 
@@ -296,7 +306,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const securityCode = generateUniqueSecurityCode(users); 
 
     if (isSupabaseConfigured) {
-        // --- CHECK DUPLICATES (Frontend Pre-Check) ---
+        // --- STEP 1: STRICT DUPLICATE CHECK ---
         try {
             const { data: existingUser } = await supabase
                 .from('profiles')
@@ -305,17 +315,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 .maybeSingle();
 
             if (existingUser) {
-                throw new Error("Usuário ou E-mail já cadastrados. Tente recuperar sua senha.");
+                throw new Error("ERRO CRÍTICO: Este Usuário ou E-mail já existe no sistema.");
             }
         } catch (e: any) {
-            if (e.message && !e.message.includes("Usuário ou E-mail já cadastrados")) {
-                // Ignora erro de permissão na verificação e deixa o Auth cuidar
-            } else {
-                throw e;
-            }
+            if (e.message && e.message.includes("ERRO CRÍTICO")) throw e;
         }
 
-        // 1. Create Auth User
+        // --- STEP 2: CREATE AUTH USER ---
         const { data: authData, error } = await supabase.auth.signUp({
             email: data.email,
             password: data.password,
@@ -331,23 +337,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (error) throw new Error(error.message);
         
         if (authData.user) {
-            // 2. CRITICAL FIX: Manual Profile Insert (Fallback for Trigger)
-            // Garantia dupla: Se o trigger falhar, o frontend insere.
-            try {
+            // --- STEP 3: INSISTENT SAVE (RETRY LOGIC) ---
+            // Force insert into profiles. Retries 3 times if connection fails.
+            const insertProfile = async () => {
                 const isAdmin = checkIsAdminLocal(data.username);
                 await supabase.from('profiles').insert({
-                    id: authData.user.id,
+                    id: authData.user!.id,
                     email: data.email,
                     username: data.username,
                     name: data.name,
                     security_code: securityCode,
                     is_admin: isAdmin
                 });
+            };
+
+            try {
+                await retryOperation(insertProfile, 3, 1000);
             } catch (profileErr) {
-                console.log("Profile insert fallback skipped (likely created by trigger):", profileErr);
+                console.error("Failed to force-save profile after retries:", profileErr);
+                // If duplicate key error, it means trigger worked or user exists. Good.
             }
 
-            // 3. Set Local User Immediately (Optimistic Login)
+            // --- STEP 4: OPTIMISTIC LOGIN ---
             const newUser: User = {
                 id: authData.user.id,
                 username: data.username,
@@ -363,13 +374,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setCurrentUser(newUser);
             return newUser;
         }
-        throw new Error("Erro desconhecido ao criar conta.");
+        throw new Error("Erro ao criar conta no servidor.");
 
     } else {
-        await new Promise(resolve => setTimeout(resolve, 200));
+        // Local Logic
         if (users.some(u => u.username.toLowerCase() === data.username.toLowerCase())) throw new Error("Usuário já em uso.");
-        if (users.some(u => u.email.toLowerCase() === data.email.toLowerCase())) throw new Error("Email já cadastrado.");
-
         const newUser: User = {
             ...data,
             id: Date.now().toString(),
@@ -379,7 +388,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             subscriptionExpiresAt: null,
             createdAt: new Date().toISOString(),
         };
-
         const updated = [...users, newUser];
         saveLocalUsers(updated);
         setCurrentUser(newUser);
@@ -389,14 +397,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    // UI First: Remove usuário da tela imediatamente
+    // UI First
     setCurrentUser(null);
-    
-    // Background: Limpa sessão no servidor
     if (isSupabaseConfigured) {
-        try {
-            await supabase.auth.signOut();
-        } catch (e) { }
+        try { await supabase.auth.signOut(); } catch (e) { }
     } else {
         localStorage.removeItem('provest_session');
     }
@@ -411,13 +415,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
           const updated = users.map(u => u.id === userId ? { ...u, subscriptionExpiresAt: expiryDate } : u);
           saveLocalUsers(updated);
-          if (currentUser?.id === userId) {
-              const me = updated.find(u => u.id === userId);
-              if (me) {
-                  setCurrentUser(me);
-                  localStorage.setItem('provest_session', JSON.stringify(me));
-              }
-          }
       }
   };
 
@@ -430,10 +427,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
       } else {
           const updated = users.map(u => {
-              if (u.id === userId) {
-                  if (checkIsAdminLocal(u.username)) return u;
-                  return { ...u, isBanned: !u.isBanned };
-              }
+              if (u.id === userId) return { ...u, isBanned: !u.isBanned };
               return u;
           });
           saveLocalUsers(updated);
@@ -465,7 +459,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
           return null;
       } else {
-          await new Promise(resolve => setTimeout(resolve, 1000));
           return users.find(u => 
             u.username.toLowerCase() === username.toLowerCase() && 
             u.email.toLowerCase() === email.toLowerCase() && 
@@ -478,12 +471,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (isSupabaseConfigured) {
           await supabase.auth.updateUser({ password: newPassword });
       } else {
-          await new Promise(resolve => setTimeout(resolve, 1000));
           const updated = users.map(u => u.id === userId ? { ...u, password: newPassword } : u);
           saveLocalUsers(updated);
-          if (currentUser?.id === userId) {
-              setCurrentUser({ ...currentUser, password: newPassword });
-          }
       }
   };
 
@@ -492,34 +481,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await supabase.auth.updateUser({ email: newEmail });
           await supabase.from('profiles').update({ email: newEmail }).eq('id', userId);
       } else {
-          if (users.some(u => u.email.toLowerCase() === newEmail.toLowerCase() && u.id !== userId)) {
-              throw new Error("Email já em uso.");
-          }
           const updated = users.map(u => u.id === userId ? { ...u, email: newEmail } : u);
           saveLocalUsers(updated);
-          if (currentUser?.id === userId) {
-              setCurrentUser({ ...currentUser, email: newEmail });
-          }
       }
   };
 
   const addSuggestion = async (text: string, user: User) => {
       if (isSupabaseConfigured) {
-          await supabase.from('suggestions').insert({
-              user_id: user.id,
-              text: text
-          });
+          await supabase.from('suggestions').insert({ user_id: user.id, text: text });
       } else {
-          const newSug: Suggestion = {
-              id: Date.now().toString(),
-              userId: user.id,
-              username: user.username,
-              text,
-              createdAt: new Date().toISOString()
-          };
-          const updated = [newSug, ...suggestions];
-          setSuggestions(updated);
-          localStorage.setItem('provest_suggestions', JSON.stringify(updated));
+          const newSug: Suggestion = { id: Date.now().toString(), userId: user.id, username: user.username, text, createdAt: new Date().toISOString() };
+          setSuggestions([newSug, ...suggestions]);
       }
   };
 

@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/layout/Sidebar';
 import { PortfolioProvider } from './contexts/PortfolioContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -22,6 +22,15 @@ const AuthenticatedApp: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const { currentUser } = useAuth();
+
+  // FORCE DASHBOARD ON LOGIN
+  // This effect runs whenever currentUser changes (i.e., login happens).
+  // It resets the view to 'dashboard', fixing the issue of landing on Profile.
+  useEffect(() => {
+      if (currentUser) {
+          setCurrentView('dashboard');
+      }
+  }, [currentUser?.id]); // Only trigger if user ID changes (new login)
 
   if (!currentUser) {
       return <AuthScreen />;
