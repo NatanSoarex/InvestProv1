@@ -17,7 +17,7 @@ export interface AuthContextType {
   resetPassword: (userId: string, newPassword: string) => Promise<void>;
   updateEmail: (userId: string, newEmail: string) => Promise<void>;
   addSuggestion: (text: string, user: User) => void;
-  refreshUserData: () => Promise<void>; // Nova função exposta
+  refreshUserData: () => Promise<void>; 
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -201,7 +201,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               console.error("Erro ao buscar perfis (Admin):", error.message);
           }
           
-          if (data) {
+          if (data && data.length > 0) {
               const mappedUsers: User[] = data.map(p => ({
                   id: p.id,
                   username: p.username,
@@ -215,10 +215,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   createdAt: p.created_at
               }));
               setUsers(mappedUsers);
-          } else if (!data && !error) {
-              // Se não retornou erro mas a lista é vazia, pode ser RLS.
-              // Adicionamos o usuário atual para garantir que a lista não fique 100% branca se o fetch falhar silenciosamente
+          } else if ((!data || data.length === 0) && !error) {
+              // Se lista vazia e sem erro (RLS pode retornar array vazio)
+              // Não limpamos 'users' imediatamente para evitar piscar, a menos que seja confirmado
               console.warn("Lista de usuários vazia. Verifique permissões RLS no Supabase.");
+              // Mantemos o usuário atual na lista para o admin não se sentir 'excluído'
               setUsers([currentUser]); 
           }
 

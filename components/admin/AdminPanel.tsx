@@ -29,13 +29,104 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         setIsRefreshing(false);
     };
 
-    const sqlCommand = `create policy "Admin vê todos perfis" on public.profiles for select using ((select is_admin from public.profiles where id = auth.uid()) = true);`;
+    // Script SQL Robusto e Limpo para Configuração do Banco
+    const sqlCommand = `-- 1. Tabelas Principais (Se nao existirem)
+create table if not exists public.profiles (
+  id uuid references auth.users on delete cascade not null primary key,
+  username text unique,
+  name text,
+  email text,
+  security_code text,
+  is_admin boolean default false,
+  is_banned boolean default false,
+  subscription_expires_at timestamptz,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.transactions (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references public.profiles(id) not null,
+  ticker text not null,
+  quantity numeric not null,
+  price numeric not null,
+  total_cost numeric not null,
+  date_time timestamptz not null,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.watchlist (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references public.profiles(id) not null,
+  ticker text not null,
+  created_at timestamptz default now(),
+  unique(user_id, ticker)
+);
+
+create table if not exists public.suggestions (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references public.profiles(id) not null,
+  text text not null,
+  created_at timestamptz default now()
+);
+
+-- 2. Habilitar Seguranca (RLS)
+alter table public.profiles enable row level security;
+alter table public.transactions enable row level security;
+alter table public.watchlist enable row level security;
+alter table public.suggestions enable row level security;
+
+-- 3. Politicas de Acesso (Policies)
+-- Perfis
+create policy "Perfis publicos" on public.profiles for select using (true);
+create policy "Usuario atualiza proprio perfil" on public.profiles for update using (auth.uid() = id);
+create policy "Admin ve todos perfis" on public.profiles for select using ((select is_admin from public.profiles where id = auth.uid()) = true);
+
+-- Transacoes
+create policy "Usuario ve suas transacoes" on public.transactions for select using (auth.uid() = user_id);
+create policy "Usuario cria suas transacoes" on public.transactions for insert with check (auth.uid() = user_id);
+create policy "Usuario deleta suas transacoes" on public.transactions for delete using (auth.uid() = user_id);
+
+-- Watchlist
+create policy "Usuario ve sua watchlist" on public.watchlist for select using (auth.uid() = user_id);
+create policy "Usuario cria na watchlist" on public.watchlist for insert with check (auth.uid() = user_id);
+create policy "Usuario deleta da watchlist" on public.watchlist for delete using (auth.uid() = user_id);
+
+-- Sugestoes
+create policy "Admin ve sugestoes" on public.suggestions for select using ((select is_admin from public.profiles where id = auth.uid()) = true);
+create policy "Usuario envia sugestao" on public.suggestions for insert with check (auth.uid() = user_id);
+
+-- 4. Gatilho Automatico (Trigger)
+create or replace function public.handle_new_user() 
+returns trigger as $$
+begin
+  insert into public.profiles (id, email, name, username, security_code, is_admin)
+  values (
+    new.id, 
+    new.email, 
+    new.raw_user_meta_data->>'name', 
+    new.raw_user_meta_data->>'username',
+    new.raw_user_meta_data->>'security_code',
+    (new.raw_user_meta_data->>'username' = '@natansoarex')
+  );
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+`;
 
     const handleCopySQL = () => {
         navigator.clipboard.writeText(sqlCommand);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };
+
+    // Verifica se o problema é filtro ou banco de dados vazio
+    const isDatabaseIssue = users.length <= 1 && !searchTerm; 
+    const isSearchEmpty = users.length > 1 && filteredUsers.length === 0;
 
     return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -188,41 +279,48 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                                         ) : (
                                             <tr>
                                                 <td colSpan={4} className="p-8 text-center text-brand-secondary">
-                                                    <div className="flex flex-col items-center gap-4 bg-brand-surface/50 p-6 rounded-xl border border-brand-border">
-                                                        <div className="p-3 bg-brand-bg rounded-full">
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 opacity-50 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                                            </svg>
-                                                        </div>
-                                                        <div>
-                                                            <p className="font-bold text-brand-text mb-1">Lista de Usuários Bloqueada</p>
-                                                            <p className="text-xs opacity-80 max-w-md mx-auto mb-3">
-                                                                O banco de dados (Supabase) precisa de uma permissão (RLS) para que o Admin possa ler a lista de todos os usuários.
-                                                            </p>
-                                                            <div className="flex flex-col gap-2 items-center w-full">
-                                                                <code className="bg-black/30 p-3 rounded text-[10px] font-mono w-full text-left overflow-x-auto border border-brand-border/30 block text-brand-secondary">
-                                                                    {sqlCommand}
-                                                                </code>
-                                                                <button 
-                                                                    onClick={handleCopySQL}
-                                                                    className={`w-full py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2 ${copied ? 'bg-brand-success text-white' : 'bg-brand-primary text-white hover:bg-brand-primary/80'}`}
-                                                                >
-                                                                    {copied ? (
-                                                                        <>
-                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                                                                            Copiado!
-                                                                        </>
-                                                                    ) : (
-                                                                        <>
-                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
-                                                                            Copiar Comando SQL
-                                                                        </>
-                                                                    )}
-                                                                </button>
-                                                                <p className="text-[10px] text-brand-secondary mt-1">Cole este comando no <b>SQL Editor</b> do Supabase.</p>
+                                                    {isDatabaseIssue ? (
+                                                        <div className="flex flex-col items-center gap-4 bg-brand-surface/50 p-6 rounded-xl border border-brand-border">
+                                                            <div className="p-3 bg-brand-bg rounded-full">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 opacity-50 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                                                </svg>
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-bold text-brand-text mb-1">Configuração do Banco de Dados Necessária</p>
+                                                                <p className="text-xs opacity-80 max-w-md mx-auto mb-3">
+                                                                    Parece que as tabelas ou permissões (RLS) não estão configuradas corretamente no Supabase.
+                                                                </p>
+                                                                <div className="flex flex-col gap-2 items-center w-full">
+                                                                    <pre className="bg-black/30 p-3 rounded text-[10px] font-mono w-full text-left overflow-x-auto border border-brand-border/30 block text-brand-secondary h-32">
+                                                                        {sqlCommand}
+                                                                    </pre>
+                                                                    <button 
+                                                                        onClick={handleCopySQL}
+                                                                        className={`w-full py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2 ${copied ? 'bg-brand-success text-white' : 'bg-brand-primary text-white hover:bg-brand-primary/80'}`}
+                                                                    >
+                                                                        {copied ? (
+                                                                            <>
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                                                                                Copiado!
+                                                                            </>
+                                                                        ) : (
+                                                                            <>
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                                                                                Copiar Script de Instalação
+                                                                            </>
+                                                                        )}
+                                                                    </button>
+                                                                    <p className="text-[10px] text-brand-secondary mt-1">Cole este código no <b>SQL Editor</b> do Supabase e clique em Run.</p>
+                                                                </div>
                                                             </div>
                                                         </div>
-                                                    </div>
+                                                    ) : (
+                                                        <div className="py-10">
+                                                            <p className="text-lg font-medium">Nenhum usuário encontrado.</p>
+                                                            <p className="text-sm opacity-60">Tente um termo de busca diferente.</p>
+                                                        </div>
+                                                    )}
                                                 </td>
                                             </tr>
                                         )}
