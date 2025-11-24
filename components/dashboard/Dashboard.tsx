@@ -101,7 +101,6 @@ const Dashboard: React.FC = () => {
       };
       
       try {
-        // Use currentQuotes to build resilient history
         const historyData = await financialApi.getPortfolioPriceHistory(transactions, fxRate, selectedRange, currentQuotesMap);
         setPortfolioHistory(historyData);
       } catch (e) {
@@ -111,7 +110,6 @@ const Dashboard: React.FC = () => {
       }
     }
 
-    // Trigger fetch when range or quotes change (for real-time chart updates)
     fetchHistory();
     
   }, [transactions, fxRate, selectedRange, currentQuotesMap]);
@@ -164,14 +162,14 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <SummaryCard 
             title={t('netWorth')}
-            value={formatDisplayValue(totalValue)} 
+            value={formatDisplayValue(totalValue || 0)} 
             change={totalGainLoss}
             changePercent={totalGainLossPercent}
-            displayChange={formatDisplayValue(Math.abs(totalGainLoss))}
+            displayChange={formatDisplayValue(Math.abs(totalGainLoss || 0))}
         />
         <SummaryCard 
             title={t('totalInvested')}
-            value={formatDisplayValue(totalInvested)} 
+            value={formatDisplayValue(totalInvested || 0)} 
         />
       </div>
 
@@ -185,7 +183,6 @@ const Dashboard: React.FC = () => {
                             key={range}
                             onClick={() => {
                                 setSelectedRange(range);
-                                // Don't clear history to prevent blinking, let it update
                             }}
                             className={`px-3 py-1 text-xs font-medium rounded-md transition-all duration-200 whitespace-nowrap ${
                                 selectedRange === range 

@@ -43,21 +43,21 @@ const HoldingRow: React.FC<HoldingRowProps> = ({ holding, onShowHistory, onRemov
   // SAFETY GUARD: Prevent crash if holding or asset is missing
   if (!holding || !holding.asset) return null;
 
-  const { asset, quote, totalQuantity, averagePrice, currentValue, portfolioPercent, isLocked } = holding;
+  const { asset, quote, totalQuantity, isLocked } = holding;
   
   const { settings, fxRate } = usePortfolio();
   const isBRL = settings.currency === 'BRL';
   const currencySymbol = isBRL ? 'BRL' : 'USD';
   const conversionRate = isBRL ? fxRate : 1;
 
-  // Convert base USD values to Display Currency
-  // Holding values (currentValueUSD, totalInvestedUSD) are already in USD base
-  // EXCEPT: For individual row logic, we might want to show native vs converted
-  // Standardizing to User Setting:
-  
-  const displayCurrentValue = holding.currentValueUSD * conversionRate;
-  const displayPrice = (holding.currentValueUSD / holding.totalQuantity) * conversionRate;
-  const displayAveragePrice = (holding.totalInvestedUSD / holding.totalQuantity) * conversionRate;
+  // Safe conversions with null checks
+  const displayCurrentValue = (holding.currentValueUSD || 0) * conversionRate;
+  const displayPrice = (holding.totalQuantity > 0) 
+      ? ((holding.currentValueUSD || 0) / holding.totalQuantity) * conversionRate 
+      : 0;
+  const displayAveragePrice = (holding.totalQuantity > 0) 
+      ? ((holding.totalInvestedUSD || 0) / holding.totalQuantity) * conversionRate 
+      : 0;
 
   const handleRemove = (e: React.MouseEvent) => {
       e.preventDefault();
@@ -97,11 +97,7 @@ const HoldingRow: React.FC<HoldingRowProps> = ({ holding, onShowHistory, onRemov
   // SAFETY CHECK: Default to 0 if null/undefined
   const changeUSD = holding.dayChangeUSD ?? 0;
   const change = changeUSD * conversionRate;
-  
   const changePercent = holding.dayChangePercent ?? 0;
-
-  // Check for country safety
-  const safeCountry = asset.country || 'Global';
 
   return (
     <tr className="border-b border-brand-border hover:bg-brand-surface/50 transition-colors group">
@@ -135,7 +131,7 @@ const HoldingRow: React.FC<HoldingRowProps> = ({ holding, onShowHistory, onRemov
                 <p className="font-medium text-brand-text">{formatCurrency(displayPrice, currencySymbol)}</p>
             </div>
             <p className={`text-xs ${change >= 0 ? 'text-brand-success' : 'text-brand-danger'}`}>
-              {change >= 0 ? '+' : ''}{change.toFixed(2)} ({changePercent.toFixed(2)}%)
+              {change >= 0 ? '+' : ''}{(change || 0).toFixed(2)} ({(changePercent || 0).toFixed(2)}%)
             </p>
           </div>
         ) : (
@@ -148,7 +144,7 @@ const HoldingRow: React.FC<HoldingRowProps> = ({ holding, onShowHistory, onRemov
       </td>
       <td className="p-4 text-right">
         <p className="font-medium text-brand-text">{formatCurrency(displayCurrentValue, currencySymbol)}</p>
-        <p className="text-xs text-brand-secondary">{formatPercent(portfolioPercent)} do portfólio</p>
+        <p className="text-xs text-brand-secondary">{formatPercent(holding.portfolioPercent || 0)} do portfólio</p>
       </td>
       <td className="p-4 text-center">
         <div className="flex items-center justify-center gap-2">

@@ -18,12 +18,16 @@ export const formatCurrency = (value: number, currency: 'BRL' | 'USD') => {
         maxDecimals = 6;
     }
 
-    return new Intl.NumberFormat(currency === 'BRL' ? 'pt-BR' : 'en-US', {
-        style: 'currency',
-        currency: currency,
-        minimumFractionDigits: minDecimals,
-        maximumFractionDigits: maxDecimals,
-    }).format(value);
+    try {
+        return new Intl.NumberFormat(currency === 'BRL' ? 'pt-BR' : 'en-US', {
+            style: 'currency',
+            currency: currency,
+            minimumFractionDigits: minDecimals,
+            maximumFractionDigits: maxDecimals,
+        }).format(value);
+    } catch (e) {
+        return currency === 'BRL' ? `R$ ${value.toFixed(2)}` : `$ ${value.toFixed(2)}`;
+    }
 };
 
 export const formatUnitPrice = (value: number, currency: 'BRL' | 'USD') => {
@@ -56,12 +60,16 @@ export const formatUnitPrice = (value: number, currency: 'BRL' | 'USD') => {
         maxDecimals = 2;
     }
 
-    return new Intl.NumberFormat(currency === 'BRL' ? 'pt-BR' : 'en-US', {
-        style: 'currency',
-        currency: currency,
-        minimumFractionDigits: minDecimals,
-        maximumFractionDigits: maxDecimals,
-    }).format(value);
+    try {
+        return new Intl.NumberFormat(currency === 'BRL' ? 'pt-BR' : 'en-US', {
+            style: 'currency',
+            currency: currency,
+            minimumFractionDigits: minDecimals,
+            maximumFractionDigits: maxDecimals,
+        }).format(value);
+    } catch (e) {
+        return `${value.toFixed(minDecimals)}`;
+    }
 };
 
 export const formatPercent = (value: number) => {
@@ -73,14 +81,18 @@ export const formatPercent = (value: number) => {
 
 export const formatDate = (isoString: string) => {
     if (!isoString) return '';
-    const date = new Date(isoString);
-    if (isNaN(date.getTime())) return '';
-    
-    return date.toLocaleString('pt-BR', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
+    try {
+        const date = new Date(isoString);
+        if (isNaN(date.getTime())) return '';
+        
+        return date.toLocaleString('pt-BR', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    } catch (e) {
+        return '';
+    }
 };

@@ -29,17 +29,32 @@ const SunIcon = () => (
 );
 
 export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory }) => {
-  const { removeHolding, t } = usePortfolio();
+  const { removeHolding, settings, fxRate, t } = usePortfolio();
   const { asset, quote, totalQuantity, averagePrice, currentValue, totalGainLoss, totalGainLossPercent, dayChange, dayChangePercent } = holding;
-  const currency = asset.country === 'Brazil' ? 'BRL' : 'USD';
+  
+  // Currency Logic
+  const isBRL = settings.currency === 'BRL';
+  const currencySymbol = isBRL ? 'BRL' : 'USD';
+  const conversionRate = isBRL ? fxRate : 1;
 
-  const isDayChangePositive = (dayChange ?? 0) >= 0;
-  const isTotalReturnPositive = (totalGainLoss ?? 0) >= 0;
-  const dayChangeValue = dayChange ?? 0;
+  // Safe Value Conversions
+  const displayCurrentValue = (holding.currentValueUSD || 0) * conversionRate;
+  const displayTotalGainLoss = (holding.totalGainLossUSD || 0) * conversionRate;
+  const displayDayChange = (holding.dayChangeUSD || 0) * conversionRate;
+  const displayAveragePrice = (holding.totalQuantity > 0) 
+      ? ((holding.totalInvestedUSD || 0) / holding.totalQuantity) * conversionRate 
+      : 0;
+
+  const isDayChangePositive = (displayDayChange ?? 0) >= 0;
+  const isTotalReturnPositive = (displayTotalGainLoss ?? 0) >= 0;
   
   // New Logic: Calculate per-share gain/loss
-  const currentPrice = quote ? quote.price : 0;
-  const gainPerShare = currentPrice - averagePrice;
+  const currentQuotePrice = quote ? Number(quote.price) : 0;
+  const currentQuotePriceConverted = currentQuotePrice * conversionRate; // If quote is USD/Native, we need normalized
+  // Actually, quote.price is native. We should use normalized values.
+  // Best approach: Compare Display Average vs Display Current (derived from total)
+  const displayCurrentPricePerShare = (holding.totalQuantity > 0) ? displayCurrentValue / holding.totalQuantity : 0;
+  const gainPerShare = displayCurrentPricePerShare - displayAveragePrice;
   const isGainPerSharePositive = gainPerShare >= 0;
 
   const handleRemove = (e: React.MouseEvent) => {
@@ -58,7 +73,12 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
         {/* Header: Asset Info & Market Value */}
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <img src={asset.logo || `https://ui-avatars.com/api/?name=${asset.ticker}&background=30363D&color=C9D1D9`} alt={asset.name} className="h-10 w-10 rounded-full" />
+            <img 
+                src={asset.logo || `https://ui-avatars.com/api/?name=${asset.ticker}&background=30363D&color=C9D1D9`} 
+                alt={asset.name} 
+                className="h-10 w-10 rounded-full object-cover bg-brand-surface" 
+                onError={(e) => e.currentTarget.src = `https://ui-avatars.com/api/?name=${asset.ticker}&background=30363D&color=C9D1D9`}
+            />
             <div>
               <div className="flex items-center gap-2">
                   <p className="font-semibold text-brand-text text-base">{asset.ticker}</p>
@@ -71,7 +91,7 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
           </div>
           <div className="text-right flex-shrink-0">
             <p className="text-xs text-brand-secondary mb-0.5">{t('totalValue')}</p>
-            <p className="font-bold text-lg text-brand-text">{formatCurrency(currentValue, currency)}</p>
+            <p className="font-bold text-lg text-brand-text">{formatCurrency(displayCurrentValue, currencySymbol)}</p>
           </div>
         </div>
         
@@ -83,7 +103,7 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
             <div>
                 <p className="text-brand-secondary text-xs uppercase font-bold tracking-wider mb-1">{t('totalReturn')} (Carteira)</p>
                 <div className={`font-medium text-base ${isTotalReturnPositive ? 'text-brand-success' : 'text-brand-danger'}`}>
-                    <span>{formatCurrency(totalGainLoss ?? 0, currency)}</span>
+                    <span>{formatCurrency(displayTotalGainLoss, currencySymbol)}</span>
                     <span className="ml-1 text-xs opacity-80">({formatPercent(safeTotalGainLossPercent)})</span>
                 </div>
             </div>
@@ -94,10 +114,12 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
                 <div className={`font-medium text-base ${isDayChangePositive ? 'text-brand-success' : 'text-brand-danger'}`}>
                     {quote ? (
                         <>
-                            <span>{isDayChangePositive ? '+' : ''}{formatCurrency(dayChangeValue, currency)}</span>
+                            <span>{isDayChangePositive ? '+' : ''}{formatCurrency(displayDayChange, currencySymbol)}</span>
                             <span className="ml-1 text-xs opacity-80">({safeDayChangePercent.toFixed(2)}%)</span>
                         </>
-                    ) : '...'}
+                    ) : (
+                        <span className="text-xs text-brand-secondary">...</span>
+                    )}
                 </div>
             </div>
         </div>
@@ -106,7 +128,7 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
         <div className="mt-4 bg-brand-bg/30 rounded-lg p-3 border border-brand-border/50">
             <div className="flex justify-between items-center mb-2">
                  <span className="text-xs text-brand-secondary font-medium">Seu Preço Médio</span>
-                 <span className="text-xs text-brand-text font-mono">{formatUnitPrice(averagePrice, currency)}</span>
+                 <span className="text-xs text-brand-text font-mono">{formatUnitPrice(displayAveragePrice, currencySymbol)}</span>
             </div>
             <div className="flex justify-between items-center mb-2">
                  <div className="flex items-center gap-1">
@@ -114,13 +136,13 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
                     {quote && quote.marketState === MarketState.PRE && <SunIcon />}
                     {quote && quote.marketState === MarketState.POST && <MoonIcon />}
                  </div>
-                 <span className="text-xs text-brand-text font-bold font-mono">{quote ? formatUnitPrice(quote.price, currency) : '...'}</span>
+                 <span className="text-xs text-brand-text font-bold font-mono">{quote ? formatUnitPrice(displayCurrentPricePerShare, currencySymbol) : '...'}</span>
             </div>
             
             <div className="border-t border-brand-border/30 pt-2 mt-1 flex justify-between items-center">
                 <span className="text-xs text-brand-secondary font-medium">Diferença por Cota</span>
                 <span className={`text-xs font-bold font-mono ${isGainPerSharePositive ? 'text-brand-success' : 'text-brand-danger'}`}>
-                    {gainPerShare > 0 ? '+' : ''}{formatCurrency(gainPerShare, currency)}
+                    {gainPerShare > 0 ? '+' : ''}{formatCurrency(gainPerShare, currencySymbol)}
                 </span>
             </div>
         </div>

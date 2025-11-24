@@ -2,7 +2,7 @@
 import { Asset, Quote, AssetClass, HistoricalDataPoint, Transaction, MarketState } from '../types';
 
 // ============================================================================
-// PROVEST FINANCIAL ENGINE 6.0 (Chart Repair & Logo Restoration)
+// PROVEST FINANCIAL ENGINE 6.1 (Crash Guard & Math Fixes)
 // ============================================================================
 
 // --- Endpoints ---
@@ -36,7 +36,7 @@ const cache = {
     assets: {} as Record<string, Asset>,
 };
 
-// --- STATIC LOGO MAP (Fix for missing images) ---
+// --- STATIC LOGO MAP ---
 const LOGO_MAP: Record<string, string> = {
     // Crypto
     'BTC': 'https://assets.coingecko.com/coins/images/1/large/bitcoin.png',
@@ -195,35 +195,25 @@ const parseStooqCsv = (csvText: string): Quote | null => {
     } catch (e) { return null; }
 };
 
-// --- Helper: Logo Resolution (UPDATED) ---
+// --- Helper: Logo Resolution ---
 const resolveLogo = (ticker: string, name: string): string => {
     const t = ticker.toUpperCase().replace('.SA', '').replace('-USD', '').trim();
-    
-    // 1. Check Hardcoded Map
     if (LOGO_MAP[t]) return LOGO_MAP[t];
-
-    // 2. Fallback to Google Favicons (Reliable)
-    // Heuristics: Guess domain
     let domain = '';
     if (ticker.includes('.SA')) domain = `${t.toLowerCase()}.com.br`;
     else domain = `${t.toLowerCase()}.com`;
-    
     return `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
 };
 
 // --- Helper: Ticker Normalizer ---
 const normalizeTicker = (ticker: string) => {
     const t = ticker.toUpperCase().trim();
-    
     const cryptoMatch = TOP_ASSETS_FALLBACK.find(a => a.t === t && a.c === AssetClass.CRYPTO);
     if (cryptoMatch) return { symbol: t, type: 'CRYPTO' };
-    
     if (t.endsWith('-USD')) return { symbol: t.replace('-USD', ''), type: 'CRYPTO' };
-
     const brRegex = /^[A-Z]{4}(3|4|5|6|11)$/;
     if (t.endsWith('.SA')) return { symbol: t, type: 'BR' };
     if (brRegex.test(t)) return { symbol: `${t}.SA`, type: 'BR' };
-
     return { symbol: t, type: 'GLOBAL' };
 };
 
@@ -275,7 +265,7 @@ const providers = {
                     price: price,
                     change: 0, 
                     changePercent: 0,
-                    previousClose: price,
+                    previousClose: price, // Often lacks history, causes 0% bug. Handled in Fallback.
                     marketState: MarketState.OPEN
                 };
             }
@@ -308,24 +298,25 @@ const providers = {
             const data = await smartFetch(`${BRAPI_BASE_URL}/quote/${ticker}`, false, 3000);
             if (data?.results?.[0]) {
                 const r = data.results[0];
-                
-                let change = r.regularMarketChange || 0;
-                let changePercent = r.regularMarketChangePercent || 0;
                 const price = r.regularMarketPrice || 0;
                 const prevClose = r.regularMarketPreviousClose || price;
+                
+                // Aggressive Calculation
+                let change = r.regularMarketChange;
+                let changePercent = r.regularMarketChangePercent;
 
-                if (price > 0 && prevClose > 0 && Math.abs(price - prevClose) > 0.000001) {
-                    if (Math.abs(changePercent) < 0.0001) {
-                         const diff = price - prevClose;
+                if (price > 0 && prevClose > 0 && (change === 0 || change === null)) {
+                     const diff = price - prevClose;
+                     if (Math.abs(diff) > 0.000001) {
                          change = diff;
                          changePercent = (diff / prevClose) * 100;
-                    }
+                     }
                 }
 
                 return {
                     price: price,
-                    change: change,
-                    changePercent: changePercent,
+                    change: change || 0,
+                    changePercent: changePercent || 0,
                     previousClose: prevClose,
                     marketState: MarketState.REGULAR
                 };
@@ -350,12 +341,13 @@ const providers = {
                 if (state === MarketState.PRE && q.preMarketPrice) finalPrice = q.preMarketPrice;
                 if (state === MarketState.POST && q.postMarketPrice) finalPrice = q.postMarketPrice;
 
-                let change = q.regularMarketChange || 0;
-                let changePercent = q.regularMarketChangePercent || 0;
+                let change = q.regularMarketChange;
+                let changePercent = q.regularMarketChangePercent;
 
-                if (finalPrice > 0 && prevClose > 0 && Math.abs(finalPrice - prevClose) > 0.000001) {
-                     if (Math.abs(changePercent) < 0.0001) {
-                         const diff = finalPrice - prevClose;
+                // Aggressive Calculation Check
+                if (finalPrice > 0 && prevClose > 0 && (change === 0 || change === null)) {
+                     const diff = finalPrice - prevClose;
+                     if (Math.abs(diff) > 0.000001) {
                          change = diff;
                          changePercent = (diff / prevClose) * 100;
                      }
@@ -363,8 +355,8 @@ const providers = {
 
                 return {
                     price: finalPrice,
-                    change: change,
-                    changePercent: changePercent,
+                    change: change || 0,
+                    changePercent: changePercent || 0,
                     previousClose: prevClose,
                     marketState: state
                 };
@@ -504,10 +496,11 @@ export const financialApi = {
             if (!quote) quote = await providers.yahoo(symbol);
 
             if (quote) {
-                quote.price = quote.price || 0;
-                quote.change = quote.change || 0;
-                quote.changePercent = quote.changePercent || 0;
-                quote.previousClose = quote.previousClose || 0;
+                // SANITIZE OUTPUT TO PREVENT CRASH
+                quote.price = Number(quote.price) || 0;
+                quote.change = Number(quote.change) || 0;
+                quote.changePercent = Number(quote.changePercent) || 0;
+                quote.previousClose = Number(quote.previousClose) || 0;
 
                 cache.quotes[symbol] = { data: quote, timestamp: now };
                 result[rawTicker] = quote; 
@@ -569,7 +562,7 @@ export const financialApi = {
         let interval = '1d';
         
         if (range === '1D') {
-            startTime.setHours(0, 0, 0, 0); // Start of today
+            startTime.setHours(0, 0, 0, 0); 
             interval = '5m';
         } else if (range === '5D') {
             startTime.setDate(now.getDate() - 5);
@@ -591,11 +584,9 @@ export const financialApi = {
         const period1 = Math.floor(startTime.getTime() / 1000);
         const period2 = Math.floor(now.getTime() / 1000);
 
-        // 2. Identify Unique Assets
         const uniqueTickers = Array.from(new Set(transactions.map(t => t.ticker)));
         const assetHistoryMap: Record<string, { timestamp: number[], close: number[] }> = {};
 
-        // 3. Fetch History for each Asset
         await Promise.all(uniqueTickers.map(async (ticker) => {
             const { symbol, type } = normalizeTicker(ticker);
             const apiSymbol = type === 'CRYPTO' ? `${symbol}-USD` : symbol;
@@ -611,8 +602,6 @@ export const financialApi = {
                         close: result.indicators.quote[0].close
                     };
                 } else if (currentQuotes && currentQuotes[ticker]) {
-                    // FAIL-SAFE: If no history (market closed/API fail), generate flat line from current price
-                    // This ensures chart NEVER breaks or returns empty
                     const currentPrice = currentQuotes[ticker].price;
                     assetHistoryMap[ticker] = {
                         timestamp: [period1, period2],
@@ -620,7 +609,6 @@ export const financialApi = {
                     };
                 }
             } catch (e) {
-                // FAIL-SAFE 2: Total fallback
                 if (currentQuotes && currentQuotes[ticker]) {
                     const currentPrice = currentQuotes[ticker].price;
                     assetHistoryMap[ticker] = {
@@ -631,58 +619,46 @@ export const financialApi = {
             }
         }));
 
-        // 4. Normalize Timeline (Master Timeline)
-        // Collect all timestamps, sort, and dedup
         let allTimestamps: number[] = [];
         Object.values(assetHistoryMap).forEach(h => allTimestamps.push(...h.timestamp));
         allTimestamps = Array.from(new Set(allTimestamps)).sort((a, b) => a - b);
 
-        // If timeline empty (rare), construct basic
         if (allTimestamps.length === 0) {
             allTimestamps = [period1, period2];
         }
 
-        // 5. Calculate Portfolio Value at each point (SNAPSHOT LOGIC)
-        // "What would my CURRENT holdings be worth at time X?"
         const currentHoldings: Record<string, number> = {};
         transactions.forEach(t => {
             currentHoldings[t.ticker] = (currentHoldings[t.ticker] || 0) + t.quantity;
         });
 
-        // Total Invested (Constant for snapshot view usually, or we can calculate stair-step)
-        // For this view ("How my portfolio moves"), a flat invested line of current cost is best comparison
         let totalInvestedCurrent = 0;
-        transactions.forEach(t => totalInvestedCurrent += t.totalCost); // Native currency sum (mixed) - improved below
+        transactions.forEach(t => totalInvestedCurrent += t.totalCost); 
 
         const resultData: HistoricalDataPoint[] = [];
-
         const lastKnownPrices: Record<string, number> = {};
 
         allTimestamps.forEach(ts => {
             let portfolioValue = 0;
-            let investedValue = 0; // We can make this dynamic if we wanted time-travel invested, but sticking to snapshot for stability
+            let investedValue = 0;
 
             Object.keys(currentHoldings).forEach(ticker => {
                 const history = assetHistoryMap[ticker];
                 let price = 0;
 
                 if (history) {
-                    // Find closest price in history for this timestamp
-                    // Since timestamps might not align perfectly between assets
-                    // We find the last price *before or at* this timestamp (Forward fill logic)
                     const idx = history.timestamp.findIndex(t => t >= ts);
                     
-                    if (idx !== -1 && Math.abs(history.timestamp[idx] - ts) < 3600) { // Within an hour
+                    if (idx !== -1 && Math.abs(history.timestamp[idx] - ts) < 3600) {
                          price = history.close[idx];
                          if (price) lastKnownPrices[ticker] = price;
                     } else if (lastKnownPrices[ticker]) {
-                        price = lastKnownPrices[ticker]; // Use last known
+                        price = lastKnownPrices[ticker]; 
                     } else if (history.close.length > 0) {
-                        price = history.close[0]; // Fallback to start
+                        price = history.close[0]; 
                     }
                 }
                 
-                // Fallback to current live quote if history completely missing
                 if (!price && currentQuotes && currentQuotes[ticker]) {
                     price = currentQuotes[ticker].price;
                 }
@@ -691,12 +667,6 @@ export const financialApi = {
                     const qty = currentHoldings[ticker];
                     const { type } = normalizeTicker(ticker);
                     
-                    // Convert to USD if needed for aggregation (assuming base view is USD or convert later)
-                    // For simplicity in this function, we sum in raw value then Dashboard converts via fxRate
-                    // BUT: We need consistency. Let's assume Dashboard handles final currency. 
-                    // We must normalize to USD here if mixed? 
-                    // Actually, PortfolioContext handles totals in USD. Let's try to standardize to USD here.
-                    
                     let valueInUSD = price * qty;
                     if (type === 'BR' && fxRate > 0) valueInUSD = valueInUSD / fxRate;
                     
@@ -704,7 +674,6 @@ export const financialApi = {
                 }
             });
 
-            // Convert Total Invested to USD for comparison line
             let investedInUSD = 0;
             transactions.forEach(t => {
                  const { type } = normalizeTicker(t.ticker);
@@ -713,8 +682,6 @@ export const financialApi = {
                  investedInUSD += cost;
             });
 
-            // If we have a valid point, push it
-            // For 1D, we want explicit hours
             if (portfolioValue > 0) {
                 resultData.push({
                     date: new Date(ts * 1000).toISOString(),

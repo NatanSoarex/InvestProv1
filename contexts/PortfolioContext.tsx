@@ -40,6 +40,7 @@ interface PortfolioContextType {
   t: (key: keyof typeof translations['pt-BR']) => string;
   isPremium: boolean;
   canAddAsset: boolean;
+  importTransactions: (transactions: Omit<Transaction, 'id'>[]) => void;
 }
 
 const PortfolioContext = createContext<PortfolioContextType | undefined>(undefined);
@@ -154,6 +155,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
               } catch (err) {
                   console.error("Erro crítico ao carregar dados da nuvem:", err);
+                  // Fallback to empty or local state if needed, but prevent crash
               }
           } else {
               // Modo Local
@@ -270,7 +272,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         } catch(e) {
             console.error("CRITICAL ERROR: Failed to save transaction to DB", e);
             setTransactions(prev => prev.filter(t => t.id !== tempId));
-            alert("Erro ao salvar transação na nuvem. Verifique sua conexão.");
+            // alert("Erro ao salvar transação na nuvem. Verifique sua conexão.");
         }
 
     } else {
@@ -283,6 +285,11 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setTransactions(prev => [...prev, newTransaction]);
     }
   }, [isPremiumUser, validTickers, uniqueAssets, currentUser, setLocalTransactions]);
+
+  const importTransactions = useCallback(async (newTransactions: Omit<Transaction, 'id'>[]) => {
+      // Stub to satisfy interface - functionality removed from UI
+      console.log("Import functionality is currently disabled via UI");
+  }, []);
 
   const removeTransaction = useCallback(async (id: string) => {
     setTransactions(prev => prev.filter(t => t.id !== id));
@@ -348,13 +355,17 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const formatDisplayValue = useCallback((valueInUSD: number) => {
       try {
-          if (isNaN(valueInUSD)) return 'R$ 0,00';
+          if (valueInUSD === undefined || valueInUSD === null || isNaN(valueInUSD)) return 'R$ 0,00';
           const isBRL = settings.currency === 'BRL';
           const finalValue = isBRL ? valueInUSD * fxRate : valueInUSD;
+          
+          // Double safety check
+          if (isNaN(finalValue)) return 'R$ 0,00';
+
           return new Intl.NumberFormat(settings.language, { style: 'currency', currency: settings.currency }).format(finalValue);
       } catch (e) {
           // Fallback safe formatter if Intl fails
-          return settings.currency === 'BRL' ? `R$ ${valueInUSD.toFixed(2)}` : `$ ${valueInUSD.toFixed(2)}`;
+          return settings.currency === 'BRL' ? `R$ ${Number(valueInUSD || 0).toFixed(2)}` : `$ ${Number(valueInUSD || 0).toFixed(2)}`;
       }
   }, [settings.currency, settings.language, fxRate]);
 
@@ -366,13 +377,23 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const { holdings, totalValue, totalInvested, totalGainLoss, totalGainLossPercent, dayChange, dayChangePercent } = useMemo(() => {
     try {
         const holdingsMap: any = {};
+        
+        // Safety Loop for transactions
         for (const t of transactions) {
+          if (!t || !t.ticker) continue; // Skip invalid transactions
+          
           if (!holdingsMap[t.ticker]) {
             holdingsMap[t.ticker] = { ticker: t.ticker, totalQuantity: 0, totalInvested: 0, transactions: [] };
           }
           const holding = holdingsMap[t.ticker];
-          holding.totalInvested += Number(t.totalCost) || 0; 
-          holding.totalQuantity += Number(t.quantity) || 0;
+          
+          // Force number type
+          const cost = Number(t.totalCost);
+          const qty = Number(t.quantity);
+          
+          if (!isNaN(cost)) holding.totalInvested += cost;
+          if (!isNaN(qty)) holding.totalQuantity += qty;
+          
           holding.transactions.push(t);
         }
         
@@ -394,9 +415,11 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
           const quote = quotes[h.ticker];
 
+          // Calculations with NaN checks
           h.averagePrice = h.totalQuantity > 0 ? h.totalInvested / h.totalQuantity : 0;
-          h.currentValue = quote ? (Number(quote.price) * h.totalQuantity) : 0;
-          h.currentValue = isNaN(h.currentValue) ? 0 : h.currentValue;
+          
+          const quotePrice = quote ? Number(quote.price) : 0;
+          h.currentValue = !isNaN(quotePrice) ? (quotePrice * h.totalQuantity) : 0;
           
           h.totalGainLoss = h.currentValue - h.totalInvested;
           h.totalGainLossPercent = h.totalInvested > 0 ? (h.totalGainLoss / h.totalInvested) * 100 : 0;
@@ -407,13 +430,20 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           if (quote) {
               const now = new Date();
               h.transactions.forEach((t: Transaction) => {
-                 const txDate = new Date(t.dateTime);
-                 const isToday = txDate.getDate() === now.getDate() && txDate.getMonth() === now.getMonth();
-                 if (isToday) {
-                     holdingDayChange += (quote.price - t.price) * t.quantity;
-                 } else {
-                     const prev = quote.previousClose || quote.price;
-                     holdingDayChange += (quote.price - prev) * t.quantity;
+                 try {
+                     const txDate = new Date(t.dateTime);
+                     const isToday = txDate.getDate() === now.getDate() && txDate.getMonth() === now.getMonth() && txDate.getFullYear() === now.getFullYear();
+                     const price = Number(quote.price) || 0;
+                     
+                     if (isToday) {
+                         const txPrice = Number(t.price) || 0;
+                         holdingDayChange += (price - txPrice) * t.quantity;
+                     } else {
+                         const prev = Number(quote.previousClose) || price;
+                         holdingDayChange += (price - prev) * t.quantity;
+                     }
+                 } catch (e) {
+                     // skip corrupted transaction calculation
                  }
               });
           }
@@ -422,7 +452,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           const rateToUSD = isBRLAsset && fxRate > 0 ? (1/fxRate) : 1;
           holdingDayChangeUSD = holdingDayChange * rateToUSD;
 
-          const dayPercent = (h.currentValue - holdingDayChange) > 0 ? (holdingDayChange / (h.currentValue - holdingDayChange)) * 100 : 0;
+          const denominator = h.currentValue - holdingDayChange;
+          const dayPercent = denominator > 0 ? (holdingDayChange / denominator) * 100 : 0;
 
           return { 
               ...h, 
@@ -430,9 +461,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               quote: quote || null, 
               dayChange: holdingDayChange || 0, 
               dayChangeUSD: holdingDayChangeUSD || 0,
-              dayChangePercent: dayPercent || 0 
+              dayChangePercent: isNaN(dayPercent) ? 0 : dayPercent
           };
-        }); // Removed filter(null) because we handle missing assets now
+        });
 
         let totalValueUSD = 0, totalInvestedUSD = 0, dayChangeUSD = 0;
         
@@ -447,9 +478,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             const dcUSD = h.dayChangeUSD;
 
             if (!isLocked) {
-                totalValueUSD += cvUSD || 0;
-                totalInvestedUSD += tiUSD || 0;
-                dayChangeUSD += dcUSD || 0;
+                if (!isNaN(cvUSD)) totalValueUSD += cvUSD;
+                if (!isNaN(tiUSD)) totalInvestedUSD += tiUSD;
+                if (!isNaN(dcUSD)) dayChangeUSD += dcUSD;
             }
 
             return {
@@ -457,23 +488,24 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 currentValueUSD: cvUSD || 0,
                 totalInvestedUSD: tiUSD || 0,
                 totalGainLossUSD: (cvUSD - tiUSD) || 0,
-                dayChangeUSD: dcUSD,
+                dayChangeUSD: dcUSD || 0,
                 isLocked
             };
         }).sort((a: any, b: any) => b.currentValueUSD - a.currentValueUSD);
 
         const tglUSD = totalValueUSD - totalInvestedUSD;
         const tglpUSD = totalInvestedUSD > 0 ? (tglUSD / totalInvestedUSD) * 100 : 0;
-        const dcpUSD = (totalValueUSD - dayChangeUSD) > 0 ? (dayChangeUSD / (totalValueUSD - dayChangeUSD)) * 100 : 0;
+        const denominatorTotal = totalValueUSD - dayChangeUSD;
+        const dcpUSD = denominatorTotal > 0 ? (dayChangeUSD / denominatorTotal) * 100 : 0;
 
         return {
             holdings: finalHoldings,
             totalValue: totalValueUSD || 0,
             totalInvested: totalInvestedUSD || 0,
             totalGainLoss: tglUSD || 0,
-            totalGainLossPercent: tglpUSD || 0,
+            totalGainLossPercent: isNaN(tglpUSD) ? 0 : tglpUSD,
             dayChange: dayChangeUSD || 0,
-            dayChangePercent: dcpUSD || 0
+            dayChangePercent: isNaN(dcpUSD) ? 0 : dcpUSD
         };
     } catch (error) {
         console.error("PORTFOLIO CRASH GUARD ACTIVATED:", error);
@@ -495,7 +527,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     holdings, transactions, watchlist, totalValue, totalInvested, totalGainLoss, totalGainLossPercent, dayChange, dayChangePercent,
     addTransaction, removeTransaction, removeHolding, addToWatchlist, removeFromWatchlist, isAssetInWatchlist,
     getAssetDetails, getLiveQuote, isLoading, isRefreshing, refresh, fxRate, lastUpdated, settings, updateSettings, formatDisplayValue, t,
-    isPremium: isPremiumUser, canAddAsset
+    isPremium: isPremiumUser, canAddAsset, importTransactions
   };
 
   return <PortfolioContext.Provider value={value}>{children}</PortfolioContext.Provider>;
