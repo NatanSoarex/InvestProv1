@@ -7,7 +7,6 @@ import { isSupabaseConfigured } from '../../services/supabase';
 export const AuthScreen: React.FC = () => {
   const { login, register } = useAuth();
   const [isRegistering, setIsRegistering] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(false);
   
   // Support Chat State
   const [isSupportOpen, setIsSupportOpen] = useState(false);
@@ -44,11 +43,10 @@ export const AuthScreen: React.FC = () => {
           password
         });
         
-        setShowWelcome(true);
+        // Registro concluído com sucesso.
+        // Não há mais tela de 'Bem-vindo', o AuthContext atualiza o estado 
+        // e o App.tsx redireciona automaticamente para o Dashboard.
         
-        setTimeout(() => {
-             // Estado global já atualizou, o componente vai desmontar
-        }, 3000);
       } else {
         // Lógica de Login: Se parecer email, manda email. Se não, tenta tratar como user (adiciona @ se faltar)
         let loginIdentifier = username;
@@ -64,24 +62,6 @@ export const AuthScreen: React.FC = () => {
       setIsLoading(false);
     }
   };
-
-  if (showWelcome) {
-    return (
-      <div className="fixed inset-0 z-50 bg-brand-bg flex flex-col items-center justify-center animate-in fade-in duration-500 p-4">
-         <div className="text-center space-y-4 max-w-md bg-brand-surface p-8 rounded-2xl border border-brand-border shadow-2xl">
-            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-brand-success/20 mb-2">
-                 <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-brand-success animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                 </svg>
-            </div>
-            <h1 className="text-3xl font-bold text-brand-text">Bem-vindo!</h1>
-            <p className="text-brand-secondary text-lg">Sua conta foi criada com sucesso.</p>
-            
-            <p className="text-sm text-brand-secondary animate-pulse">Entrando no aplicativo...</p>
-         </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-brand-bg p-4 relative overflow-hidden">
