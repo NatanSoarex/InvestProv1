@@ -22,7 +22,6 @@ interface PortfolioContextType {
   dayChange: number; 
   dayChangePercent: number;
   addTransaction: (transaction: Omit<Transaction, 'id'>) => void;
-  importTransactions: (transactions: Omit<Transaction, 'id'>[]) => void;
   removeTransaction: (id: string) => void;
   removeHolding: (ticker: string) => void;
   addToWatchlist: (ticker: string) => void;
@@ -285,10 +284,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [isPremiumUser, validTickers, uniqueAssets, currentUser, setLocalTransactions]);
 
-  const importTransactions = useCallback(async (newTransactions: Omit<Transaction, 'id'>[]) => {
-      // Stub
-  }, []);
-
   const removeTransaction = useCallback(async (id: string) => {
     setTransactions(prev => prev.filter(t => t.id !== id));
     
@@ -382,9 +377,22 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
         
         const holdingsList = Object.values(holdingsMap).map((h: any) => {
-          const asset = assets[h.ticker];
+          // FIX: Fallback Asset generation if details aren't loaded yet
+          let asset = assets[h.ticker];
+          
+          if (!asset) {
+              // Create a temporary placeholder so the portfolio doesn't disappear (ZERO BALANCE FIX)
+              asset = {
+                  ticker: h.ticker,
+                  name: h.ticker, // Placeholder name
+                  logo: '',
+                  country: 'USA', // Default to avoid currency crash
+                  assetClass: 'Stock',
+                  sector: '', industry: '', marketCap: 0, peRatio: 0, pbRatio: 0, dividendYield: 0, beta: 0, volume: 0
+              } as Asset;
+          }
+
           const quote = quotes[h.ticker];
-          if (!asset) return null;
 
           h.averagePrice = h.totalQuantity > 0 ? h.totalInvested / h.totalQuantity : 0;
           h.currentValue = quote ? (Number(quote.price) * h.totalQuantity) : 0;
@@ -410,7 +418,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               });
           }
           
-          const isBRLAsset = h.asset.country === 'Brazil';
+          const isBRLAsset = asset.country === 'Brazil';
           const rateToUSD = isBRLAsset && fxRate > 0 ? (1/fxRate) : 1;
           holdingDayChangeUSD = holdingDayChange * rateToUSD;
 
@@ -424,7 +432,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               dayChangeUSD: holdingDayChangeUSD || 0,
               dayChangePercent: dayPercent || 0 
           };
-        }).filter((h: any) => h !== null);
+        }); // Removed filter(null) because we handle missing assets now
 
         let totalValueUSD = 0, totalInvestedUSD = 0, dayChangeUSD = 0;
         
@@ -485,7 +493,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const value = {
     holdings, transactions, watchlist, totalValue, totalInvested, totalGainLoss, totalGainLossPercent, dayChange, dayChangePercent,
-    addTransaction, importTransactions, removeTransaction, removeHolding, addToWatchlist, removeFromWatchlist, isAssetInWatchlist,
+    addTransaction, removeTransaction, removeHolding, addToWatchlist, removeFromWatchlist, isAssetInWatchlist,
     getAssetDetails, getLiveQuote, isLoading, isRefreshing, refresh, fxRate, lastUpdated, settings, updateSettings, formatDisplayValue, t,
     isPremium: isPremiumUser, canAddAsset
   };
