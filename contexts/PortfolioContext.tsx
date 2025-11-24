@@ -1,4 +1,5 @@
 
+
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { Transaction, Holding, Asset, Quote } from '../types';
 import { financialApi } from '../services/financialApi';
@@ -26,6 +27,7 @@ interface PortfolioContextType {
 
   // Actions
   addTransaction: (transaction: Omit<Transaction, 'id'>) => void;
+  importTransactions: (transactions: Omit<Transaction, 'id'>[]) => void; // NEW
   removeTransaction: (id: string) => void;
   removeHolding: (ticker: string) => void;
   addToWatchlist: (ticker: string) => void;
@@ -180,7 +182,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const currentUnique = new Set(prev.map(t => t.ticker));
         // If ticker is new AND limit reached AND not premium -> Block
         if (!currentUnique.has(transaction.ticker.toUpperCase()) && currentUnique.size >= 6 && !isPremiumUser) {
-            // Although UI should block, double check here or throw error
             console.warn("Limit reached for free tier");
             return prev; 
         }
@@ -192,6 +193,34 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         };
         return [...prev, newTransaction].sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
     });
+  }, [setTransactions, isPremiumUser]);
+
+  // NEW: Bulk Import
+  const importTransactions = useCallback((newTransactions: Omit<Transaction, 'id'>[]) => {
+      setTransactions(prev => {
+          const added: Transaction[] = [];
+          const currentUnique = new Set(prev.map(t => t.ticker));
+          let uniqueCount = currentUnique.size;
+
+          for (const t of newTransactions) {
+              const ticker = t.ticker.toUpperCase().trim();
+              // Check Limit
+              if (!currentUnique.has(ticker)) {
+                  if (uniqueCount >= 6 && !isPremiumUser) continue; // Skip over limit
+                  currentUnique.add(ticker);
+                  uniqueCount++;
+              }
+
+              added.push({
+                  ...t,
+                  ticker: ticker,
+                  id: Date.now().toString(36) + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2)
+              });
+          }
+          
+          const result = [...prev, ...added].sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
+          return result;
+      });
   }, [setTransactions, isPremiumUser]);
 
   const removeTransaction = useCallback((id: string) => {
@@ -387,6 +416,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     dayChange,
     dayChangePercent,
     addTransaction,
+    importTransactions,
     removeTransaction,
     removeHolding,
     addToWatchlist,

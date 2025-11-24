@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Suggestion } from '../types';
 
-interface AuthContextType {
+export interface AuthContextType {
   currentUser: User | null;
   users: User[]; // Lista de todos os usuários para o admin
   suggestions: Suggestion[]; // Lista de sugestões
@@ -21,7 +21,7 @@ interface AuthContextType {
 
 // --- CONFIGURAÇÃO DE DESENVOLVIMENTO ---
 // Mude para FALSE quando for lançar o aplicativo para o público!
-const AUTO_LOGIN_DEV = true; 
+const AUTO_LOGIN_DEV = false; 
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 

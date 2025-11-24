@@ -1,4 +1,5 @@
 
+
 export const translations = {
   'pt-BR': {
     // Sidebar & Nav
@@ -24,6 +25,9 @@ export const translations = {
     // Portfolio
     myPortfolio: 'Meu Portfólio',
     addTransaction: 'Adicionar Transação',
+    importTransactions: 'Importar Documento (CSV)',
+    selectFile: 'Selecionar Arquivo',
+    confirmImport: 'Confirmar Importação',
     liveStatus: 'Ao Vivo',
     asset: 'Ativo',
     price: 'Preço',
@@ -146,6 +150,9 @@ export const translations = {
     // Portfolio
     myPortfolio: 'My Portfolio',
     addTransaction: 'Add Transaction',
+    importTransactions: 'Import Document (CSV)',
+    selectFile: 'Select File',
+    confirmImport: 'Confirm Import',
     liveStatus: 'Live',
     asset: 'Asset',
     price: 'Price',
