@@ -44,11 +44,9 @@ export const AuthScreen: React.FC = () => {
         });
         
         // Registro concluído com sucesso.
-        // Não há mais tela de 'Bem-vindo', o AuthContext atualiza o estado 
-        // e o App.tsx redireciona automaticamente para o Dashboard.
         
       } else {
-        // Lógica de Login: Se parecer email, manda email. Se não, tenta tratar como user (adiciona @ se faltar)
+        // Lógica de Login
         let loginIdentifier = username;
         
         if (!username.includes('@') && !username.includes('.')) {
@@ -100,7 +98,7 @@ export const AuthScreen: React.FC = () => {
                     value={isRegistering ? username.replace('@','') : username}
                     onChange={(e) => setUsername(e.target.value)}
                     className={`w-full bg-brand-bg border border-brand-border rounded-lg py-2 ${isRegistering ? 'pl-7' : 'pl-4'} pr-4 text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary`}
-                    placeholder={isRegistering ? "usuario" : "seu@email.com ou @usuario"}
+                    placeholder={isRegistering ? "usuario" : "seu@email.com (Recomendado)"}
                     required
                 />
             </div>
