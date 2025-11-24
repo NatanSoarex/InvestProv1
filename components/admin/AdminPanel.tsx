@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Card, CardHeader, CardContent } from '../ui/Card';
@@ -10,10 +9,11 @@ interface AdminPanelProps {
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
-    const { users, currentUser, updateUserSubscription, banUser, isPremium, suggestions } = useAuth();
+    const { users, currentUser, updateUserSubscription, banUser, isPremium, suggestions, refreshUserData } = useAuth();
     const [selectedDays, setSelectedDays] = useState(30);
     const [searchTerm, setSearchTerm] = useState('');
     const [activeTab, setActiveTab] = useState<'USERS' | 'SUGGESTIONS'>('USERS');
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     if (!currentUser?.isAdmin) return null;
 
@@ -21,6 +21,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         u.username.toLowerCase().includes(searchTerm.toLowerCase()) || 
         u.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        await refreshUserData();
+        setIsRefreshing(false);
+    };
 
     return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -66,14 +72,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                     {/* USERS TAB */}
                     {activeTab === 'USERS' && (
                         <>
-                            <div className="mb-4">
+                            <div className="mb-4 flex gap-3">
                                 <input 
                                     type="text" 
                                     placeholder="Buscar usuário por nome ou @..." 
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full bg-brand-bg border border-brand-border rounded-lg px-4 py-2 text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary"
+                                    className="flex-1 bg-brand-bg border border-brand-border rounded-lg px-4 py-2 text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary"
                                 />
+                                <button 
+                                    onClick={handleRefresh}
+                                    disabled={isRefreshing}
+                                    className="px-4 py-2 bg-brand-surface border border-brand-border rounded-lg text-brand-text hover:bg-brand-bg disabled:opacity-50"
+                                    title="Recarregar Lista"
+                                >
+                                    {isRefreshing ? (
+                                        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                    ) : (
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                    )}
+                                </button>
                             </div>
 
                             <div className="flex-1 overflow-y-auto border border-brand-border rounded-lg bg-brand-surface">
@@ -87,71 +110,80 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-brand-border/50">
-                                        {filteredUsers.map(user => {
-                                            const premium = isPremium(user);
-                                            return (
-                                                <tr key={user.id} className="hover:bg-brand-surface/50">
-                                                    <td className="p-4">
-                                                        <div className="font-bold text-brand-text">{user.name}</div>
-                                                        <div className="text-brand-secondary text-xs">{user.username}</div>
-                                                        <div className="text-brand-secondary text-[10px]">{user.email}</div>
-                                                    </td>
-                                                    <td className="p-4">
-                                                        {user.isAdmin ? (
-                                                            <span className="px-2 py-1 bg-brand-primary/10 text-brand-primary rounded text-xs border border-brand-primary/20">Admin</span>
-                                                        ) : user.isBanned ? (
-                                                            <span className="px-2 py-1 bg-brand-danger/10 text-brand-danger rounded text-xs border border-brand-danger/20">Banido</span>
-                                                        ) : (
-                                                            <span className="px-2 py-1 bg-brand-success/10 text-brand-success rounded text-xs border border-brand-success/20">Ativo</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="p-4">
-                                                        {premium ? (
-                                                            <div>
-                                                                <div className="text-brand-success font-medium">Premium</div>
-                                                                <div className="text-xs text-brand-secondary">Expira: {formatDate(user.subscriptionExpiresAt!)}</div>
-                                                            </div>
-                                                        ) : (
-                                                            <span className="text-brand-secondary">Free (Max 6)</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="p-4 text-right">
-                                                        <div className="flex items-center justify-end gap-2">
-                                                            <div className="flex items-center bg-brand-bg rounded-lg border border-brand-border p-1">
-                                                                <button 
-                                                                    onClick={() => updateUserSubscription(user.id, selectedDays)}
-                                                                    className="px-2 py-1 text-xs font-bold bg-brand-primary text-white rounded hover:bg-blue-600"
-                                                                >
-                                                                    +{selectedDays}d
-                                                                </button>
-                                                                <input 
-                                                                    type="number" 
-                                                                    value={selectedDays} 
-                                                                    onChange={(e) => setSelectedDays(Number(e.target.value))}
-                                                                    className="w-12 bg-transparent text-center text-xs text-brand-text focus:outline-none"
-                                                                />
-                                                            </div>
-                                                            
-                                                            {!user.isAdmin && (
-                                                                <button 
-                                                                    onClick={() => banUser(user.id)}
-                                                                    className={`p-2 rounded-lg border transition-colors ${
-                                                                        user.isBanned 
-                                                                        ? 'border-brand-success text-brand-success hover:bg-brand-success/10' 
-                                                                        : 'border-brand-danger text-brand-danger hover:bg-brand-danger/10'
-                                                                    }`}
-                                                                    title={user.isBanned ? "Desbanir" : "Banir"}
-                                                                >
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                                                                    </svg>
-                                                                </button>
+                                        {filteredUsers.length > 0 ? (
+                                            filteredUsers.map(user => {
+                                                const premium = isPremium(user);
+                                                return (
+                                                    <tr key={user.id} className="hover:bg-brand-surface/50">
+                                                        <td className="p-4">
+                                                            <div className="font-bold text-brand-text">{user.name}</div>
+                                                            <div className="text-brand-secondary text-xs">{user.username}</div>
+                                                            <div className="text-brand-secondary text-[10px]">{user.email}</div>
+                                                        </td>
+                                                        <td className="p-4">
+                                                            {user.isAdmin ? (
+                                                                <span className="px-2 py-1 bg-brand-primary/10 text-brand-primary rounded text-xs border border-brand-primary/20">Admin</span>
+                                                            ) : user.isBanned ? (
+                                                                <span className="px-2 py-1 bg-brand-danger/10 text-brand-danger rounded text-xs border border-brand-danger/20">Banido</span>
+                                                            ) : (
+                                                                <span className="px-2 py-1 bg-brand-success/10 text-brand-success rounded text-xs border border-brand-success/20">Ativo</span>
                                                             )}
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
+                                                        </td>
+                                                        <td className="p-4">
+                                                            {premium ? (
+                                                                <div>
+                                                                    <div className="text-brand-success font-medium">Premium</div>
+                                                                    <div className="text-xs text-brand-secondary">Expira: {formatDate(user.subscriptionExpiresAt!)}</div>
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-brand-secondary">Free (Max 6)</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="p-4 text-right">
+                                                            <div className="flex items-center justify-end gap-2">
+                                                                <div className="flex items-center bg-brand-bg rounded-lg border border-brand-border p-1">
+                                                                    <button 
+                                                                        onClick={() => updateUserSubscription(user.id, selectedDays)}
+                                                                        className="px-2 py-1 text-xs font-bold bg-brand-primary text-white rounded hover:bg-blue-600"
+                                                                    >
+                                                                        +{selectedDays}d
+                                                                    </button>
+                                                                    <input 
+                                                                        type="number" 
+                                                                        value={selectedDays} 
+                                                                        onChange={(e) => setSelectedDays(Number(e.target.value))}
+                                                                        className="w-12 bg-transparent text-center text-xs text-brand-text focus:outline-none"
+                                                                    />
+                                                                </div>
+                                                                
+                                                                {!user.isAdmin && (
+                                                                    <button 
+                                                                        onClick={() => banUser(user.id)}
+                                                                        className={`p-2 rounded-lg border transition-colors ${
+                                                                            user.isBanned 
+                                                                            ? 'border-brand-success text-brand-success hover:bg-brand-success/10' 
+                                                                            : 'border-brand-danger text-brand-danger hover:bg-brand-danger/10'
+                                                                        }`}
+                                                                        title={user.isBanned ? "Desbanir" : "Banir"}
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                                                        </svg>
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        ) : (
+                                            <tr>
+                                                <td colSpan={4} className="p-8 text-center text-brand-secondary">
+                                                    <p>Nenhum usuário encontrado.</p>
+                                                    <p className="text-xs mt-2">Se você for Admin e esta lista estiver vazia na nuvem, verifique as políticas RLS ou clique em atualizar.</p>
+                                                </td>
+                                            </tr>
+                                        )}
                                     </tbody>
                                 </table>
                             </div>
@@ -178,7 +210,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                                                 </div>
                                                 <div>
                                                     <p className="text-sm font-bold text-brand-text">{sug.username}</p>
-                                                    <p className="text-[10px] text-brand-secondary">{formatDate(sug.createdAt)}</p>
+                                                    <p className="text-xs text-brand-secondary">{formatDate(sug.createdAt)}</p>
                                                 </div>
                                             </div>
                                         </div>

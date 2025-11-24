@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User, Suggestion } from '../types';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
 
@@ -17,6 +17,7 @@ export interface AuthContextType {
   resetPassword: (userId: string, newPassword: string) => Promise<void>;
   updateEmail: (userId: string, newEmail: string) => Promise<void>;
   addSuggestion: (text: string, user: User) => void;
+  refreshUserData: () => Promise<void>; // Nova função exposta
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -188,43 +189,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
   }, []);
 
-  // Carregar lista de usuários para Admin
-  useEffect(() => {
-      const fetchAllUsers = async () => {
-          if (!currentUser?.isAdmin) return;
-          
-          if (isSupabaseConfigured) {
-              const { data } = await supabase.from('profiles').select('*');
-              if (data) {
-                  const mappedUsers: User[] = data.map(p => ({
-                      id: p.id,
-                      username: p.username,
-                      name: p.name,
-                      email: p.email,
-                      password: '',
-                      securityCode: p.security_code,
-                      isAdmin: p.is_admin,
-                      isBanned: p.is_banned,
-                      subscriptionExpiresAt: p.subscription_expires_at,
-                      createdAt: p.created_at
-                  }));
-                  setUsers(mappedUsers);
-              }
-              const { data: sugs } = await supabase.from('suggestions').select('*');
-              if (sugs) {
-                  const mappedSugs: Suggestion[] = sugs.map(s => ({
-                      id: s.id,
-                      userId: s.user_id,
-                      username: 'User',
-                      text: s.text,
-                      createdAt: s.created_at
-                  }));
-                  setSuggestions(mappedSugs); 
-              }
+  // Função para atualizar dados de usuários e sugestões (Disponível para Admin)
+  const refreshUserData = useCallback(async () => {
+      if (!currentUser?.isAdmin) return;
+      
+      if (isSupabaseConfigured) {
+          // Busca perfis
+          const { data, error } = await supabase.from('profiles').select('*');
+          if (error) {
+              console.error("Erro ao buscar perfis:", error.message);
           }
-      };
-      fetchAllUsers();
+          if (data) {
+              const mappedUsers: User[] = data.map(p => ({
+                  id: p.id,
+                  username: p.username,
+                  name: p.name,
+                  email: p.email,
+                  password: '',
+                  securityCode: p.security_code,
+                  isAdmin: p.is_admin,
+                  isBanned: p.is_banned,
+                  subscriptionExpiresAt: p.subscription_expires_at,
+                  createdAt: p.created_at
+              }));
+              setUsers(mappedUsers);
+          }
+
+          // Busca sugestões
+          const { data: sugs } = await supabase.from('suggestions').select('*');
+          if (sugs) {
+              const mappedSugs: Suggestion[] = sugs.map(s => ({
+                  id: s.id,
+                  userId: s.user_id,
+                  username: 'User',
+                  text: s.text,
+                  createdAt: s.created_at
+              }));
+              setSuggestions(mappedSugs); 
+          }
+      }
   }, [currentUser]);
+
+  // Carregar lista de usuários para Admin na montagem ou quando muda user
+  useEffect(() => {
+      refreshUserData();
+  }, [refreshUserData]);
 
 
   // --- AÇÕES ---
@@ -472,7 +481,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, users, suggestions, login, register, logout, updateUserSubscription, banUser, isPremium, verifyUserForSupport, resetPassword, updateEmail, addSuggestion }}>
+    <AuthContext.Provider value={{ currentUser, users, suggestions, login, register, logout, updateUserSubscription, banUser, isPremium, verifyUserForSupport, resetPassword, updateEmail, addSuggestion, refreshUserData }}>
       {!loading && children}
     </AuthContext.Provider>
   );
