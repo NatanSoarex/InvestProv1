@@ -14,6 +14,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [activeTab, setActiveTab] = useState<'USERS' | 'SUGGESTIONS'>('USERS');
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [copied, setCopied] = useState(false);
 
     if (!currentUser?.isAdmin) return null;
 
@@ -26,6 +27,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         setIsRefreshing(true);
         await refreshUserData();
         setIsRefreshing(false);
+    };
+
+    const sqlCommand = `create policy "Admin vê todos perfis" on public.profiles for select using ((select is_admin from public.profiles where id = auth.uid()) = true);`;
+
+    const handleCopySQL = () => {
+        navigator.clipboard.writeText(sqlCommand);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
     };
 
     return (
@@ -179,17 +188,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                                         ) : (
                                             <tr>
                                                 <td colSpan={4} className="p-8 text-center text-brand-secondary">
-                                                    <div className="flex flex-col items-center gap-2">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                                        </svg>
-                                                        <p className="font-bold">Acesso Bloqueado pelo Banco de Dados</p>
-                                                        <p className="text-xs max-w-md opacity-80">
-                                                            Para que o Admin veja todos os usuários, você precisa rodar o comando SQL de política (RLS) no Supabase.
-                                                        </p>
-                                                        <code className="bg-black/30 p-2 rounded text-[10px] mt-2 w-full text-left overflow-x-auto">
-                                                            CREATE POLICY "Admins view all" ON public.profiles FOR SELECT USING ((SELECT is_admin FROM profiles WHERE id = auth.uid()) = true);
-                                                        </code>
+                                                    <div className="flex flex-col items-center gap-4 bg-brand-surface/50 p-6 rounded-xl border border-brand-border">
+                                                        <div className="p-3 bg-brand-bg rounded-full">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 opacity-50 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                                            </svg>
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-bold text-brand-text mb-1">Lista de Usuários Bloqueada</p>
+                                                            <p className="text-xs opacity-80 max-w-md mx-auto mb-3">
+                                                                O banco de dados (Supabase) precisa de uma permissão (RLS) para que o Admin possa ler a lista de todos os usuários.
+                                                            </p>
+                                                            <div className="flex flex-col gap-2 items-center w-full">
+                                                                <code className="bg-black/30 p-3 rounded text-[10px] font-mono w-full text-left overflow-x-auto border border-brand-border/30 block text-brand-secondary">
+                                                                    {sqlCommand}
+                                                                </code>
+                                                                <button 
+                                                                    onClick={handleCopySQL}
+                                                                    className={`w-full py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2 ${copied ? 'bg-brand-success text-white' : 'bg-brand-primary text-white hover:bg-brand-primary/80'}`}
+                                                                >
+                                                                    {copied ? (
+                                                                        <>
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                                                                            Copiado!
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                                                                            Copiar Comando SQL
+                                                                        </>
+                                                                    )}
+                                                                </button>
+                                                                <p className="text-[10px] text-brand-secondary mt-1">Cole este comando no <b>SQL Editor</b> do Supabase.</p>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </td>
                                             </tr>
