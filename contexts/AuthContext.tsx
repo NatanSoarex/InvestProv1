@@ -196,9 +196,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (isSupabaseConfigured) {
           // Busca perfis
           const { data, error } = await supabase.from('profiles').select('*');
+          
           if (error) {
-              console.error("Erro ao buscar perfis:", error.message);
+              console.error("Erro ao buscar perfis (Admin):", error.message);
           }
+          
           if (data) {
               const mappedUsers: User[] = data.map(p => ({
                   id: p.id,
@@ -213,6 +215,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   createdAt: p.created_at
               }));
               setUsers(mappedUsers);
+          } else if (!data && !error) {
+              // Se não retornou erro mas a lista é vazia, pode ser RLS.
+              // Adicionamos o usuário atual para garantir que a lista não fique 100% branca se o fetch falhar silenciosamente
+              console.warn("Lista de usuários vazia. Verifique permissões RLS no Supabase.");
+              setUsers([currentUser]); 
           }
 
           // Busca sugestões
@@ -232,8 +239,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Carregar lista de usuários para Admin na montagem ou quando muda user
   useEffect(() => {
-      refreshUserData();
-  }, [refreshUserData]);
+      if (currentUser?.isAdmin) {
+          refreshUserData();
+      }
+  }, [currentUser, refreshUserData]);
 
 
   // --- AÇÕES ---
@@ -289,6 +298,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const securityCode = generateUniqueSecurityCode(users); 
 
     if (isSupabaseConfigured) {
+        // --- CHECK DUPLICATES BEFORE SIGNUP (STRICT) ---
+        try {
+            const { data: existingUser } = await supabase
+                .from('profiles')
+                .select('id')
+                .or(`email.eq.${data.email},username.eq.${data.username}`)
+                .maybeSingle();
+
+            if (existingUser) {
+                throw new Error("Usuário ou E-mail já cadastrados. Tente recuperar sua senha.");
+            }
+        } catch (e: any) {
+            // Se o erro for de permissão (RLS), ignoramos e deixamos o Supabase Auth tentar (ele valida email duplicado)
+            if (e.message && !e.message.includes("Usuário ou E-mail já cadastrados")) {
+                console.warn("Pré-checagem de duplicidade falhou (RLS?), prosseguindo com Auth.", e);
+            } else {
+                throw e; // Repassa o erro de duplicidade real
+            }
+        }
+
         const { data: authData, error } = await supabase.auth.signUp({
             email: data.email,
             password: data.password,

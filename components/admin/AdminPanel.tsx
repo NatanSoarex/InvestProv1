@@ -179,8 +179,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                                         ) : (
                                             <tr>
                                                 <td colSpan={4} className="p-8 text-center text-brand-secondary">
-                                                    <p>Nenhum usuário encontrado.</p>
-                                                    <p className="text-xs mt-2">Se você for Admin e esta lista estiver vazia na nuvem, verifique as políticas RLS ou clique em atualizar.</p>
+                                                    <div className="flex flex-col items-center gap-2">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                                        </svg>
+                                                        <p className="font-bold">Acesso Bloqueado pelo Banco de Dados</p>
+                                                        <p className="text-xs max-w-md opacity-80">
+                                                            Para que o Admin veja todos os usuários, você precisa rodar o comando SQL de política (RLS) no Supabase.
+                                                        </p>
+                                                        <code className="bg-black/30 p-2 rounded text-[10px] mt-2 w-full text-left overflow-x-auto">
+                                                            CREATE POLICY "Admins view all" ON public.profiles FOR SELECT USING ((SELECT is_admin FROM profiles WHERE id = auth.uid()) = true);
+                                                        </code>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         )}
