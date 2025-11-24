@@ -60,8 +60,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // --- INICIALIZAÇÃO ---
   useEffect(() => {
     const initAuth = async () => {
-        // Check for DEV MODE auto-login (Only if Supabase is NOT configured or explicitly wanted)
-        // For cloud production, ensure this is disabled in code or logic.
+        // Check for DEV MODE auto-login
         const AUTO_LOGIN_DEV = false; 
 
         if (AUTO_LOGIN_DEV) {
@@ -84,8 +83,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (isSupabaseConfigured) {
             // MODO SUPABASE
             const { data: { session } } = await supabase.auth.getSession();
+            
             if (session?.user) {
-                // Busca perfil completo
+                // 1. Tenta buscar o perfil completo no banco
                 const { data: profile } = await supabase
                     .from('profiles')
                     .select('*')
@@ -98,13 +98,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         username: profile.username,
                         name: profile.name,
                         email: profile.email,
-                        password: '', // Não armazenamos senha no frontend com Supabase
+                        password: '',
                         securityCode: profile.security_code,
                         isAdmin: profile.is_admin,
                         isBanned: profile.is_banned,
                         subscriptionExpiresAt: profile.subscription_expires_at,
                         createdAt: profile.created_at
                     });
+                } else {
+                    // 2. FALLBACK DE SEGURANÇA: Se o trigger do banco ainda não criou o perfil (race condition),
+                    // usa os metadados da sessão para manter o usuário logado.
+                    // Isso corrige o erro de "logout ao atualizar página".
+                    console.warn("Perfil não encontrado no banco, usando metadados da sessão.");
+                    const meta = session.user.user_metadata;
+                    if (meta) {
+                        setCurrentUser({
+                            id: session.user.id,
+                            username: meta.username || session.user.email,
+                            name: meta.name || 'Usuário',
+                            email: session.user.email || '',
+                            password: '',
+                            securityCode: meta.security_code || '------',
+                            isAdmin: meta.username === '@natansoarex', // Check simples
+                            isBanned: false,
+                            subscriptionExpiresAt: null,
+                            createdAt: new Date().toISOString()
+                        });
+                    }
                 }
             }
 
@@ -112,8 +132,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
                 if (event === 'SIGNED_OUT') {
                     setCurrentUser(null);
-                } else if (session?.user && event === 'SIGNED_IN') {
-                     // Only fetch if not already set (to avoid overwriting optimistic updates)
+                } else if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+                     // Tenta buscar perfil atualizado
                      const { data: profile } = await supabase
                         .from('profiles')
                         .select('*')
@@ -140,8 +160,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } else {
             // MODO LOCAL STORAGE
             const localUsers = loadLocalUsers();
-            
-            // Atualiza status de Admin
             const updatedUsers = localUsers.map((u: User) => ({
                 ...u,
                 isAdmin: checkIsAdminLocal(u.username)
@@ -168,7 +186,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
   }, []);
 
-  // Carregar lista de usuários para Admin (funciona em ambos os modos)
+  // Carregar lista de usuários para Admin
   useEffect(() => {
       const fetchAllUsers = async () => {
           if (!currentUser?.isAdmin) return;
@@ -190,21 +208,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   }));
                   setUsers(mappedUsers);
               }
-              
               const { data: sugs } = await supabase.from('suggestions').select('*');
               if (sugs) {
                   const mappedSugs: Suggestion[] = sugs.map(s => ({
                       id: s.id,
                       userId: s.user_id,
-                      username: 'User', // Join necessário idealmente
+                      username: 'User',
                       text: s.text,
                       createdAt: s.created_at
                   }));
                   setSuggestions(mappedSugs); 
               }
-
-          } else {
-              // Modo Local já carrega no init
           }
       };
       fetchAllUsers();
@@ -217,12 +231,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isSupabaseConfigured) {
         let emailToLogin = username;
 
-        // Se NÃO parece um email (é um username tipo @user), tenta buscar o email correspondente
         if (!username.includes('@') || !username.includes('.')) {
-             // Garante formato @username
              const targetUsername = username.startsWith('@') ? username : `@${username}`;
-             
-             // Busca na tabela de perfis
              const { data, error } = await supabase
                 .from('profiles')
                 .select('email')
@@ -232,20 +242,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
              if (data && data.email) {
                  emailToLogin = data.email;
              } else {
-                 // Se não achar, lança erro amigável
                  throw new Error("Usuário não encontrado. Verifique o nome de usuário ou tente o e-mail.");
              }
         }
 
-        // Login com o email (seja o digitado ou o encontrado via username)
         const { error } = await supabase.auth.signInWithPassword({ email: emailToLogin, password });
         if (error) throw new Error("Credenciais inválidas.");
         return true;
 
     } else {
-        // Modo Local
         await new Promise(resolve => setTimeout(resolve, 500));
-        // Suporta login por @username ou email no modo local também
         const user = users.find(u => 
             (u.username.toLowerCase() === username.toLowerCase() || u.email.toLowerCase() === username.toLowerCase()) 
             && u.password === password
@@ -265,7 +271,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const securityCode = generateUniqueSecurityCode(users); 
 
     if (isSupabaseConfigured) {
-        // Registro no Supabase
         const { data: authData, error } = await supabase.auth.signUp({
             email: data.email,
             password: data.password,
@@ -281,9 +286,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (error) throw new Error(error.message);
         
         if (authData.user) {
-            // OPTIMISTIC UPDATE:
-            // We manually create the user object and set it as current
-            // This allows immediate access without waiting for DB triggers/webhooks
             const newUser: User = {
                 id: authData.user.id,
                 username: data.username,
@@ -302,7 +304,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error("Erro ao criar conta.");
 
     } else {
-        // Registro Local
         await new Promise(resolve => setTimeout(resolve, 800));
         if (users.some(u => u.username.toLowerCase() === data.username.toLowerCase())) throw new Error("Usuário já em uso.");
         if (users.some(u => u.email.toLowerCase() === data.email.toLowerCase())) throw new Error("Email já cadastrado.");

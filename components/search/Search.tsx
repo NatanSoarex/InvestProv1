@@ -149,6 +149,7 @@ const Search: React.FC = () => {
   }
 
   const handleToggleWatchlist = (ticker: string) => {
+      // Optimistic update relies on Context state updating immediately
       if (isAssetInWatchlist(ticker)) {
           removeFromWatchlist(ticker);
       } else {

@@ -130,7 +130,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           }
       };
       loadData();
-  }, [currentUser, localTransactions, localWatchlist]); // Dependências locais recarregam se mudarem (sync one-way simples)
+  }, [currentUser, localTransactions, localWatchlist]); 
 
   // --- HELPERS DE DADOS ---
 
@@ -198,25 +198,43 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id'>) => {
     const cleanTicker = transaction.ticker.toUpperCase().trim();
     
-    // Limit Check
     if (!isPremiumUser && !validTickers.includes(cleanTicker) && uniqueAssets.length >= 6) {
-        return; // Block silently or UI should handle
+        return;
     }
 
     if (isSupabaseConfigured && currentUser) {
-        const { data, error } = await supabase.from('transactions').insert({
-            user_id: currentUser.id,
-            ticker: cleanTicker,
-            quantity: transaction.quantity,
-            price: transaction.price,
-            total_cost: transaction.totalCost,
-            date_time: transaction.dateTime
-        }).select().single();
+        // OPTIMISTIC UPDATE: Add to UI immediately
+        const tempId = 'temp_' + Date.now();
+        const optimisticTx: Transaction = {
+            ...transaction,
+            id: tempId,
+            ticker: cleanTicker
+        };
+        
+        setTransactions(prev => [...prev, optimisticTx].sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime()));
 
-        if (data) {
-            const newTx = { ...transaction, id: data.id, ticker: cleanTicker };
-            setTransactions(prev => [...prev, newTx].sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime()));
+        // Background Sync
+        try {
+            const { data, error } = await supabase.from('transactions').insert({
+                user_id: currentUser.id,
+                ticker: cleanTicker,
+                quantity: transaction.quantity,
+                price: transaction.price,
+                total_cost: transaction.totalCost,
+                date_time: transaction.dateTime
+            }).select().single();
+
+            if (data) {
+                // Replace temp ID with real ID
+                setTransactions(prev => prev.map(t => t.id === tempId ? { ...t, id: data.id } : t));
+            } else {
+                // Revert if error (optional, usually we just keep trying or show error)
+                console.error("Error adding transaction to DB:", error);
+            }
+        } catch(e) {
+            console.error("Sync error", e);
         }
+
     } else {
         const newTransaction = { 
             ...transaction, 
@@ -224,14 +242,11 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             id: Date.now().toString(36) + Math.random().toString(36).substring(2)
         };
         setLocalTransactions(prev => [...prev, newTransaction].sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime()));
-        setTransactions(prev => [...prev, newTransaction]); // Optimistic update
+        setTransactions(prev => [...prev, newTransaction]);
     }
   }, [isPremiumUser, validTickers, uniqueAssets, currentUser, setLocalTransactions]);
 
   const importTransactions = useCallback(async (newTransactions: Omit<Transaction, 'id'>[]) => {
-      // Simplified import for now
-      // In a real app, we'd do bulk insert.
-      // For Supabase, we can do bulk insert.
       const toInsert = [];
       const currentUniqueSet = new Set(uniqueAssets);
       let count = currentUniqueSet.size;
@@ -255,66 +270,74 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       if (isSupabaseConfigured && currentUser && toInsert.length > 0) {
           await supabase.from('transactions').insert(toInsert);
-          // Reload to sync
           const { data } = await supabase.from('transactions').select('*').eq('user_id', currentUser.id);
           if(data) setTransactions(data.map((t: any) => ({ ...t, totalCost: Number(t.total_cost), quantity: Number(t.quantity), price: Number(t.price), dateTime: t.date_time })));
       } else if (!isSupabaseConfigured) {
-          // Local Import
           const localMapped = toInsert.map(t => ({ ...t, id: Math.random().toString(), user_id: undefined } as unknown as Transaction));
           setLocalTransactions(prev => [...prev, ...localMapped]);
       }
   }, [uniqueAssets, isPremiumUser, currentUser, setLocalTransactions]);
 
   const removeTransaction = useCallback(async (id: string) => {
+    // Optimistic
+    setTransactions(prev => prev.filter(t => t.id !== id));
+    
     if (isSupabaseConfigured) {
         await supabase.from('transactions').delete().eq('id', id);
-        setTransactions(prev => prev.filter(t => t.id !== id));
     } else {
         setLocalTransactions(prev => prev.filter(t => t.id !== id));
-        setTransactions(prev => prev.filter(t => t.id !== id));
     }
   }, [setLocalTransactions]);
 
   const removeHolding = useCallback(async (ticker: string) => {
     const target = ticker.toUpperCase().trim();
+    
+    // Optimistic
+    setTransactions(prev => prev.filter(t => t.ticker !== target));
+
     if (isSupabaseConfigured) {
         await supabase.from('transactions').delete().eq('ticker', target).eq('user_id', currentUser?.id);
-        setTransactions(prev => prev.filter(t => t.ticker !== target));
     } else {
         setLocalTransactions(prev => prev.filter(t => t.ticker !== target));
-        setTransactions(prev => prev.filter(t => t.ticker !== target));
     }
   }, [setLocalTransactions, currentUser]);
 
   const addToWatchlist = useCallback(async (ticker: string) => {
     const target = ticker.toUpperCase().trim();
+    
+    // Optimistic UI Update: Show it immediately
+    setWatchlist(prev => Array.from(new Set([...prev, target])));
+
     if (isSupabaseConfigured && currentUser) {
-        // Check exists
-        const { error } = await supabase.from('watchlist').insert({ user_id: currentUser.id, ticker: target });
-        if (!error) setWatchlist(prev => [...prev, target]);
+        try {
+            // Background sync
+            await supabase.from('watchlist').insert({ user_id: currentUser.id, ticker: target });
+        } catch (error) {
+            // If duplicate error, ignore. If other error, log it.
+            console.log("Sync watchlist items (safe to ignore if duplicate)", error);
+        }
     } else {
         setLocalWatchlist(prev => Array.from(new Set([...prev, target])));
-        setWatchlist(prev => Array.from(new Set([...prev, target])));
     }
   }, [setLocalWatchlist, currentUser]);
 
   const removeFromWatchlist = useCallback(async (ticker: string) => {
     const target = ticker.toUpperCase().trim();
+    
+    // Optimistic
+    setWatchlist(prev => prev.filter(t => t !== target));
+
     if (isSupabaseConfigured && currentUser) {
         await supabase.from('watchlist').delete().eq('ticker', target).eq('user_id', currentUser.id);
-        setWatchlist(prev => prev.filter(t => t !== target));
     } else {
         setLocalWatchlist(prev => prev.filter(t => t !== target));
-        setWatchlist(prev => prev.filter(t => t !== target));
     }
   }, [setLocalWatchlist, currentUser]);
 
   const isAssetInWatchlist = useCallback((ticker: string) => watchlist.includes(ticker.toUpperCase().trim()), [watchlist]);
 
   const getAssetDetails = useCallback(async (ticker: string) => {
-      // Check local state first
       if (assets[ticker]) return assets[ticker];
-      // Fallback to API
       return await financialApi.getAssetDetails(ticker);
   }, [assets]);
 
@@ -336,11 +359,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return translations[settings.language][key] || key;
   }, [settings.language]);
 
-  // --- CALCULATION LOGIC (Memoized) ---
-  // Mantém a mesma lógica matemática robusta anterior
+  // --- CALCULATION LOGIC ---
   const { holdings, totalValue, totalInvested, totalGainLoss, totalGainLossPercent, dayChange, dayChangePercent } = useMemo(() => {
-    // ... (Mesma lógica de cálculo do arquivo anterior, omitida aqui para brevidade mas deve ser mantida igual)
-    // Recopiando a lógica essencial para garantir funcionamento:
     const holdingsMap: any = {};
     for (const t of transactions) {
       if (!holdingsMap[t.ticker]) {
@@ -362,7 +382,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       h.totalGainLoss = h.currentValue - h.totalInvested;
       h.totalGainLossPercent = h.totalInvested > 0 ? (h.totalGainLoss / h.totalInvested) * 100 : 0;
       
-      // Day Change Logic
       let holdingDayChange = 0;
       if (quote) {
           const now = new Date();
@@ -382,7 +401,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return { ...h, asset, quote: quote || null, dayChange: holdingDayChange, dayChangePercent: dayPercent };
     }).filter((h: any) => h !== null);
 
-    // USD Aggregation
     let totalValueUSD = 0, totalInvestedUSD = 0, dayChangeUSD = 0;
     
     const finalHoldings = holdingsList.map((h: any) => {

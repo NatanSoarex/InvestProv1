@@ -28,10 +28,6 @@ const WatchlistItem: React.FC<{
   const isPositive = changeValue >= 0;
   const isNegative = changeValue < 0;
 
-  // Visual estilo Google Finance
-  const textTrend = isPositive ? 'text-[#3FB950]' : isNegative ? 'text-[#F85149]' : 'text-brand-secondary';
-  
-  // Rótulo temporal: Cripto = 24h, Ações = Hoje
   const timeLabel = asset.assetClass === 'Crypto' ? '24h' : 'Hoje';
 
   const handleRemove = (e: React.MouseEvent) => {
@@ -42,7 +38,6 @@ const WatchlistItem: React.FC<{
   return (
     <div className="relative group bg-brand-surface border border-brand-border hover:border-brand-primary/50 rounded-2xl p-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl overflow-hidden flex flex-col h-full">
         
-        {/* Background Watermark Logo (Artistic Touch) */}
         <div className="absolute -right-6 -bottom-6 opacity-[0.03] transform rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-500">
              <img src={asset.logo} className="w-32 h-32 grayscale" alt="" />
         </div>
@@ -90,7 +85,6 @@ const WatchlistItem: React.FC<{
                              <span className="opacity-80 font-normal">({Math.abs(changePercent).toFixed(2)}%)</span>
                          </span>
                          
-                         {/* Etiqueta de Tempo Organizada */}
                          <span className="text-[10px] font-bold text-brand-secondary uppercase tracking-wider opacity-60">
                             {timeLabel}
                         </span>
@@ -110,13 +104,16 @@ const WatchlistItem: React.FC<{
 const Watchlist: React.FC = () => {
   const { watchlist, getAssetDetails, getLiveQuote, removeFromWatchlist, t } = usePortfolio();
   const [assets, setAssets] = useState<Asset[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Initially false to show data fast if cached
 
   useEffect(() => {
     const loadWatchlist = async () => {
-      setLoading(true);
+      if (watchlist.length > assets.length) setLoading(true); // Only show loading if we are missing items
+      
+      // Parallel fetch but prioritize UI
       const data = await Promise.all(watchlist.map(ticker => getAssetDetails(ticker)));
       setAssets(data.filter((a): a is Asset => !!a));
+      
       setLoading(false);
     };
     loadWatchlist();
@@ -137,7 +134,7 @@ const Watchlist: React.FC = () => {
         </div>
       </div>
       
-      {loading ? (
+      {loading && assets.length === 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
            {[1,2,3,4].map(i => (
                <div key={i} className="h-48 bg-brand-surface/30 animate-pulse rounded-2xl border border-brand-border/50"></div>
