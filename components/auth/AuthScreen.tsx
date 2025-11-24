@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { SupportChat } from './SupportChat';
+import { isSupabaseConfigured } from '../../services/supabase';
 
 export const AuthScreen: React.FC = () => {
   const { login, register } = useAuth();
@@ -34,7 +35,7 @@ export const AuthScreen: React.FC = () => {
         if (username.length < 3) {
             throw new Error("O usuário deve ter pelo menos 3 caracteres.");
         }
-        // Adiciona @ se não tiver
+        // Adiciona @ se não tiver apenas para o registro de username
         const finalUsername = username.startsWith('@') ? username : `@${username}`;
         
         const newUser = await register({
@@ -47,13 +48,20 @@ export const AuthScreen: React.FC = () => {
         setGeneratedSecurityCode(newUser.securityCode);
         setShowWelcome(true);
         
-        // Delay maior agora para dar tempo de ler o código
         setTimeout(() => {
              // Estado global já atualizou, o componente vai desmontar
         }, 6000);
       } else {
-        const finalUsername = username.startsWith('@') ? username : `@${username}`;
-        await login(finalUsername, password);
+        // Lógica de Login: Se parecer email, manda email. Se não, tenta tratar como user.
+        let loginIdentifier = username;
+        
+        // Se não é email e estamos no modo local, adiciona @ por conveniência
+        if (!isSupabaseConfigured && !username.includes('@')) {
+             loginIdentifier = `@${username}`;
+        }
+        // Se estamos no Supabase e o usuário digitou apenas o user sem @, não fazemos nada (vai falhar se não for email, mas o erro orienta)
+        
+        await login(loginIdentifier, password);
       }
     } catch (err: any) {
       setError(err.message || "Ocorreu um erro.");
@@ -118,15 +126,17 @@ export const AuthScreen: React.FC = () => {
           )}
 
           <div>
-            <label className="block text-xs font-bold text-brand-secondary uppercase mb-1">Usuário</label>
+            <label className="block text-xs font-bold text-brand-secondary uppercase mb-1">
+                {isRegistering ? 'Usuário' : 'E-mail ou Usuário'}
+            </label>
             <div className="relative">
-                <span className="absolute left-3 top-2.5 text-brand-secondary">@</span>
+                {isRegistering && <span className="absolute left-3 top-2.5 text-brand-secondary">@</span>}
                 <input 
                     type="text" 
-                    value={username.replace('@','')}
+                    value={isRegistering ? username.replace('@','') : username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className="w-full bg-brand-bg border border-brand-border rounded-lg py-2 pl-7 pr-4 text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary"
-                    placeholder="usuario"
+                    className={`w-full bg-brand-bg border border-brand-border rounded-lg py-2 ${isRegistering ? 'pl-7' : 'pl-4'} pr-4 text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary`}
+                    placeholder={isRegistering ? "usuario" : "seu@email.com"}
                     required
                 />
             </div>
@@ -206,6 +216,7 @@ export const AuthScreen: React.FC = () => {
                     onClick={() => {
                         setIsRegistering(!isRegistering);
                         setError('');
+                        setUsername('');
                     }}
                     className="text-brand-primary font-bold ml-2 hover:underline"
                 >

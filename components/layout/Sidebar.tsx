@@ -2,6 +2,7 @@
 import React from 'react';
 import { View } from '../../App';
 import { usePortfolio } from '../../contexts/PortfolioContext';
+import { isSupabaseConfigured } from '../../services/supabase';
 
 interface SidebarProps {
   currentView: View;
@@ -118,9 +119,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, o
         />
       </div>
 
-      {/* Copyright Footer */}
-      <div className="mt-6 px-6 text-[10px] text-brand-secondary text-center opacity-40 font-mono">
-         <p>v4.4.0 (Glass UI)</p>
+      {/* Database Status Footer */}
+      <div className="mt-6 px-6 text-[10px] text-center font-mono flex flex-col gap-1">
+         <p className="text-brand-secondary opacity-40">v4.5.0 (Cloud Ready)</p>
+         <div className="flex items-center justify-center gap-2 bg-brand-surface/50 py-1 rounded-full border border-brand-border/30">
+             <span className={`h-2 w-2 rounded-full ${isSupabaseConfigured ? 'bg-brand-success animate-pulse' : 'bg-brand-secondary'}`}></span>
+             <span className={`${isSupabaseConfigured ? 'text-brand-success' : 'text-brand-secondary'} font-bold`}>
+                 {isSupabaseConfigured ? 'Cloud Conectado' : 'Modo Local'}
+             </span>
+         </div>
       </div>
     </nav>
   );

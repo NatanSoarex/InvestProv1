@@ -1,14 +1,14 @@
 
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Suggestion } from '../types';
+import { supabase, isSupabaseConfigured } from '../services/supabase';
 
 export interface AuthContextType {
   currentUser: User | null;
   users: User[]; // Lista de todos os usuários para o admin
   suggestions: Suggestion[]; // Lista de sugestões
   login: (username: string, password: string) => Promise<boolean>;
-  register: (data: Omit<User, 'id' | 'isAdmin' | 'isBanned' | 'subscriptionExpiresAt' | 'createdAt' | 'securityCode'>) => Promise<User>; // Retorna User para mostrar o código
+  register: (data: Omit<User, 'id' | 'isAdmin' | 'isBanned' | 'subscriptionExpiresAt' | 'createdAt' | 'securityCode'>) => Promise<User>; 
   logout: () => void;
   updateUserSubscription: (userId: string, days: number) => void;
   banUser: (userId: string) => void;
@@ -19,210 +19,406 @@ export interface AuthContextType {
   addSuggestion: (text: string, user: User) => void;
 }
 
-// --- CONFIGURAÇÃO DE DESENVOLVIMENTO ---
-// Mude para FALSE quando for lançar o aplicativo para o público!
-const AUTO_LOGIN_DEV = false; 
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Helper para verificar se é o admin supremo
-  // REGRA RIGOROSA: Apenas 'natansoarex' pode ser admin.
-  const checkIsAdmin = (username: string) => {
+  // --- LOCAL STORAGE HELPERS (Modo Offline) ---
+  const loadLocalUsers = () => {
+      const stored = localStorage.getItem('provest_users');
+      return stored ? JSON.parse(stored) : [];
+  };
+  
+  const saveLocalUsers = (newUsers: User[]) => {
+      setUsers(newUsers);
+      localStorage.setItem('provest_users', JSON.stringify(newUsers));
+  };
+
+  const checkIsAdminLocal = (username: string) => {
       if (!username) return false;
       const cleanUser = username.toLowerCase().replace('@', '').trim();
-      return cleanUser === 'natansoarex' || cleanUser === 'dev_admin'; // Permite o user de dev também
+      return cleanUser === 'natansoarex' || cleanUser === 'dev_admin';
   };
 
-  // Carregar usuários e sugestões do LocalStorage ao iniciar
-  useEffect(() => {
-    const storedUsers = localStorage.getItem('provest_users');
-    let parsedUsers: User[] = [];
-    
-    if (storedUsers) {
-      parsedUsers = JSON.parse(storedUsers);
-      
-      // GARANTIA DE INTEGRIDADE DO ADMIN:
-      const updatedUsers = parsedUsers.map(u => ({
-          ...u,
-          isAdmin: checkIsAdmin(u.username)
-      }));
-      
-      setUsers(updatedUsers);
-      parsedUsers = updatedUsers; // Atualiza referência local
-    }
-
-    const storedSuggestions = localStorage.getItem('provest_suggestions');
-    if (storedSuggestions) {
-        setSuggestions(JSON.parse(storedSuggestions));
-    }
-
-    const sessionUser = localStorage.getItem('provest_session');
-    
-    // --- LÓGICA DE AUTO LOGIN (DEV MODE) ---
-    if (AUTO_LOGIN_DEV && !sessionUser) {
-        // Cria um usuário Admin/Premium temporário para desenvolvimento
-        const devUser: User = {
-            id: 'dev-mode-user',
-            name: 'Desenvolvedor (Modo Teste)',
-            username: '@dev_admin',
-            email: 'dev@provest.app',
-            password: '123',
-            securityCode: '000000',
-            isAdmin: true,
-            isBanned: false,
-            subscriptionExpiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 Ano Premium
-            createdAt: new Date().toISOString()
-        };
-
-        setCurrentUser(devUser);
-        // Não salvamos na sessão persistente para garantir que se desligar o flag, ele desloga
-        console.log("⚡ MODO DEV ATIVO: Login automático realizado como Admin.");
-        
-        // Garante que esse usuário exista na lista de usuários para não dar erro
-        if (!parsedUsers.find(u => u.username === devUser.username)) {
-            setUsers(prev => [...prev, devUser]);
-        }
-        return;
-    }
-    // ---------------------------------------
-
-    if (sessionUser) {
-      // Validar se o usuário ainda existe e não está banido
-      const parsedSession = JSON.parse(sessionUser);
-      const foundUser = parsedUsers.find((u: User) => u.id === parsedSession.id);
-      
-      if (foundUser && !foundUser.isBanned) {
-        const userWithStrictRole = { ...foundUser, isAdmin: checkIsAdmin(foundUser.username) };
-        setCurrentUser(userWithStrictRole);
-      } else {
-        localStorage.removeItem('provest_session');
-      }
-    }
-  }, []);
-
-  const saveUsers = (newUsers: User[]) => {
-    setUsers(newUsers);
-    localStorage.setItem('provest_users', JSON.stringify(newUsers));
-  };
-
-  const login = async (username: string, password: string): Promise<boolean> => {
-    // Simular delay de rede
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    const user = users.find(u => u.username.toLowerCase() === username.toLowerCase() && u.password === password);
-    
-    if (user) {
-      if (user.isBanned) throw new Error("Esta conta foi banida pelo administrador.");
-      
-      // Reforça a verificação de admin no login
-      const userWithRole = { ...user, isAdmin: checkIsAdmin(user.username) };
-      
-      setCurrentUser(userWithRole);
-      localStorage.setItem('provest_session', JSON.stringify(userWithRole));
-      return true;
-    }
-    throw new Error("Usuário ou senha incorretos.");
-  };
-
-  // Função auxiliar para gerar código ÚNICO
   const generateUniqueSecurityCode = (existingUsers: User[]): string => {
       let code = '';
       let isUnique = false;
-      
-      // Loop de segurança: Gera e verifica se já existe
       while (!isUnique) {
-          // Gera número aleatório de 6 dígitos
           code = Math.floor(100000 + Math.random() * 900000).toString();
-          
-          // Verifica se algum usuário JÁ tem esse código
           // eslint-disable-next-line no-loop-func
           const exists = existingUsers.some(u => u.securityCode === code);
-          
-          if (!exists) {
-              isUnique = true;
-          }
+          if (!exists) isUnique = true;
       }
       return code;
   };
 
-  const register = async (data: Omit<User, 'id' | 'isAdmin' | 'isBanned' | 'subscriptionExpiresAt' | 'createdAt' | 'securityCode'>) => {
-    await new Promise(resolve => setTimeout(resolve, 800));
+  // --- INICIALIZAÇÃO ---
+  useEffect(() => {
+    const initAuth = async () => {
+        if (isSupabaseConfigured) {
+            // MODO SUPABASE
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user) {
+                // Busca perfil completo
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', session.user.id)
+                    .single();
+                
+                if (profile) {
+                    setCurrentUser({
+                        id: profile.id,
+                        username: profile.username,
+                        name: profile.name,
+                        email: profile.email,
+                        password: '', // Não armazenamos senha no frontend com Supabase
+                        securityCode: profile.security_code,
+                        isAdmin: profile.is_admin,
+                        isBanned: profile.is_banned,
+                        subscriptionExpiresAt: profile.subscription_expires_at,
+                        createdAt: profile.created_at
+                    });
+                }
+            }
 
-    // Check for duplicate username (case insensitive)
-    if (users.some(u => u.username.toLowerCase() === data.username.toLowerCase())) {
-      throw new Error("Este nome de usuário já está em uso.");
-    }
+            // Listener de mudanças de Auth
+            const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+                if (event === 'SIGNED_OUT') {
+                    setCurrentUser(null);
+                } else if (session?.user) {
+                     const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('*')
+                        .eq('id', session.user.id)
+                        .single();
+                     if (profile) {
+                        setCurrentUser({
+                            id: profile.id,
+                            username: profile.username,
+                            name: profile.name,
+                            email: profile.email,
+                            password: '',
+                            securityCode: profile.security_code,
+                            isAdmin: profile.is_admin,
+                            isBanned: profile.is_banned,
+                            subscriptionExpiresAt: profile.subscription_expires_at,
+                            createdAt: profile.created_at
+                        });
+                     }
+                }
+            });
+            
+            // Carregar lista de usuários se for admin (simplificado para demo)
+            // Em produção, isso seria feito apenas sob demanda
+            if (session?.user) {
+                 // Check admin role locally first or assume fetch
+            }
 
-    // Check for duplicate email (case insensitive)
-    if (users.some(u => u.email.toLowerCase() === data.email.toLowerCase())) {
-        throw new Error("Este email já está cadastrado.");
-    }
+        } else {
+            // MODO LOCAL STORAGE
+            const localUsers = loadLocalUsers();
+            
+            // Atualiza status de Admin
+            const updatedUsers = localUsers.map((u: User) => ({
+                ...u,
+                isAdmin: checkIsAdminLocal(u.username)
+            }));
+            setUsers(updatedUsers);
 
-    // Define se é admin baseado unicamente no username
-    const isAdminUser = checkIsAdmin(data.username);
-    
-    // Gera código de segurança ÚNICO
-    const uniqueCode = generateUniqueSecurityCode(users);
-
-    const newUser: User = {
-      ...data,
-      id: Date.now().toString(),
-      securityCode: uniqueCode, // Atribui o código único
-      isAdmin: isAdminUser, 
-      isBanned: false,
-      subscriptionExpiresAt: null, // Começa Free
-      createdAt: new Date().toISOString(),
+            const sessionUser = localStorage.getItem('provest_session');
+            if (sessionUser) {
+                const parsedSession = JSON.parse(sessionUser);
+                const foundUser = updatedUsers.find((u: User) => u.id === parsedSession.id);
+                if (foundUser && !foundUser.isBanned) {
+                    setCurrentUser(foundUser);
+                } else {
+                    localStorage.removeItem('provest_session');
+                }
+            }
+            
+            const storedSuggestions = localStorage.getItem('provest_suggestions');
+            if (storedSuggestions) setSuggestions(JSON.parse(storedSuggestions));
+        }
+        setLoading(false);
     };
 
-    const updatedUsers = [...users, newUser];
-    saveUsers(updatedUsers);
-    setCurrentUser(newUser);
-    localStorage.setItem('provest_session', JSON.stringify(newUser));
-    
-    return newUser;
-  };
+    initAuth();
+  }, []);
 
-  const logout = () => {
-    localStorage.removeItem('provest_session');
-    setCurrentUser(null);
-    if (AUTO_LOGIN_DEV) {
-        alert("Modo DEV ativo: O login automático ocorrerá novamente ao atualizar a página.");
+  // Carregar lista de usuários para Admin (funciona em ambos os modos)
+  useEffect(() => {
+      const fetchAllUsers = async () => {
+          if (!currentUser?.isAdmin) return;
+          
+          if (isSupabaseConfigured) {
+              const { data } = await supabase.from('profiles').select('*');
+              if (data) {
+                  const mappedUsers: User[] = data.map(p => ({
+                      id: p.id,
+                      username: p.username,
+                      name: p.name,
+                      email: p.email,
+                      password: '',
+                      securityCode: p.security_code,
+                      isAdmin: p.is_admin,
+                      isBanned: p.is_banned,
+                      subscriptionExpiresAt: p.subscription_expires_at,
+                      createdAt: p.created_at
+                  }));
+                  setUsers(mappedUsers);
+              }
+              
+              const { data: sugs } = await supabase.from('suggestions').select('*');
+              if (sugs) {
+                  const mappedSugs: Suggestion[] = sugs.map(s => ({
+                      id: s.id,
+                      userId: s.user_id,
+                      username: 'User', // Join necessário idealmente
+                      text: s.text,
+                      createdAt: s.created_at
+                  }));
+                  // Otimização: Pegar username da lista de users carregada
+                  setSuggestions(mappedSugs); 
+              }
+
+          } else {
+              // Modo Local já carrega no init
+          }
+      };
+      fetchAllUsers();
+  }, [currentUser]);
+
+
+  // --- AÇÕES ---
+
+  const login = async (username: string, password: string): Promise<boolean> => {
+    if (isSupabaseConfigured) {
+        // No Supabase, login é por email. Vamos precisar buscar o email pelo username ou pedir email no login.
+        // Hack para manter UX: Usuário digita @user, mas Supabase pede email.
+        // Solução: Se for modo Supabase, assumimos que o login DEVE ser email ou adaptamos.
+        // Para simplificar este app híbrido, vamos tentar fazer login com email se contiver @ e ., 
+        // ou buscar o email na tabela profiles (não seguro no client-side sem RLS aberto).
+        // Melhor abordagem: Pedir Email no form de login se usar Supabase.
+        // Mas para manter o código:
+        
+        // Se o input parece um email, tenta direto
+        if (username.includes('@') && username.includes('.')) {
+             const { error } = await supabase.auth.signInWithPassword({ email: username, password });
+             if (error) throw new Error(error.message);
+             return true;
+        } else {
+             // Se é username, teríamos que resolver. 
+             // Para este desafio, vamos assumir que no Supabase o usuário usa Email para logar ou ajustamos o AuthScreen.
+             throw new Error("No modo nuvem, por favor use seu E-mail para entrar.");
+        }
+    } else {
+        // Modo Local
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const user = users.find(u => u.username.toLowerCase() === username.toLowerCase() && u.password === password);
+        if (user) {
+            if (user.isBanned) throw new Error("Esta conta foi banida.");
+            setCurrentUser(user);
+            localStorage.setItem('provest_session', JSON.stringify(user));
+            return true;
+        }
+        throw new Error("Usuário ou senha incorretos.");
     }
   };
 
-  const updateUserSubscription = (userId: string, days: number) => {
-    const updatedUsers = users.map(u => {
-      if (u.id === userId) {
-        const currentExpiry = u.subscriptionExpiresAt ? new Date(u.subscriptionExpiresAt).getTime() : Date.now();
-        const baseTime = currentExpiry > Date.now() ? currentExpiry : Date.now();
-        const newExpiry = new Date(baseTime + (days * 24 * 60 * 60 * 1000)).toISOString();
-        
-        const updatedUser = { ...u, subscriptionExpiresAt: newExpiry };
-        if (currentUser?.id === userId) {
-            setCurrentUser(updatedUser);
-            localStorage.setItem('provest_session', JSON.stringify(updatedUser));
+  const register = async (data: Omit<User, 'id' | 'isAdmin' | 'isBanned' | 'subscriptionExpiresAt' | 'createdAt' | 'securityCode'>) => {
+    const securityCode = generateUniqueSecurityCode(users); // Gera localmente para garantir unicidade visual, mas no Supabase o trigger pode gerar ou salvamos este.
+
+    if (isSupabaseConfigured) {
+        // Registro no Supabase
+        // Passamos meta-dados para o trigger criar o profile
+        const { data: authData, error } = await supabase.auth.signUp({
+            email: data.email,
+            password: data.password,
+            options: {
+                data: {
+                    username: data.username,
+                    name: data.name,
+                    security_code: securityCode
+                }
+            }
+        });
+
+        if (error) throw new Error(error.message);
+        if (authData.user) {
+            // Retorna objeto User simulado para a tela de boas-vindas
+            return {
+                id: authData.user.id,
+                username: data.username,
+                name: data.name,
+                email: data.email,
+                password: '',
+                securityCode: securityCode,
+                isAdmin: checkIsAdminLocal(data.username),
+                isBanned: false,
+                subscriptionExpiresAt: null,
+                createdAt: new Date().toISOString()
+            };
         }
-        return updatedUser;
-      }
-      return u;
-    });
-    saveUsers(updatedUsers);
+        throw new Error("Erro ao criar conta.");
+
+    } else {
+        // Registro Local
+        await new Promise(resolve => setTimeout(resolve, 800));
+        if (users.some(u => u.username.toLowerCase() === data.username.toLowerCase())) throw new Error("Usuário já em uso.");
+        if (users.some(u => u.email.toLowerCase() === data.email.toLowerCase())) throw new Error("Email já cadastrado.");
+
+        const newUser: User = {
+            ...data,
+            id: Date.now().toString(),
+            securityCode: securityCode,
+            isAdmin: checkIsAdminLocal(data.username),
+            isBanned: false,
+            subscriptionExpiresAt: null,
+            createdAt: new Date().toISOString(),
+        };
+
+        const updated = [...users, newUser];
+        saveLocalUsers(updated);
+        setCurrentUser(newUser);
+        localStorage.setItem('provest_session', JSON.stringify(newUser));
+        return newUser;
+    }
   };
 
-  const banUser = (userId: string) => {
-    const updatedUsers = users.map(u => {
-      if (u.id === userId) {
-        if (checkIsAdmin(u.username)) return u;
-        return { ...u, isBanned: !u.isBanned };
+  const logout = async () => {
+    if (isSupabaseConfigured) {
+        await supabase.auth.signOut();
+    } else {
+        localStorage.removeItem('provest_session');
+    }
+    setCurrentUser(null);
+  };
+
+  const updateUserSubscription = async (userId: string, days: number) => {
+      const expiryDate = new Date(Date.now() + (days * 24 * 60 * 60 * 1000)).toISOString();
+      
+      if (isSupabaseConfigured) {
+          await supabase.from('profiles').update({ subscription_expires_at: expiryDate }).eq('id', userId);
+          // Atualiza lista local para refletir na UI
+          setUsers(prev => prev.map(u => u.id === userId ? { ...u, subscriptionExpiresAt: expiryDate } : u));
+      } else {
+          const updated = users.map(u => u.id === userId ? { ...u, subscriptionExpiresAt: expiryDate } : u);
+          saveLocalUsers(updated);
+          if (currentUser?.id === userId) {
+              const me = updated.find(u => u.id === userId);
+              if (me) {
+                  setCurrentUser(me);
+                  localStorage.setItem('provest_session', JSON.stringify(me));
+              }
+          }
       }
-      return u;
-    });
-    saveUsers(updatedUsers);
+  };
+
+  const banUser = async (userId: string) => {
+      if (isSupabaseConfigured) {
+          const user = users.find(u => u.id === userId);
+          if (user) {
+              await supabase.from('profiles').update({ is_banned: !user.isBanned }).eq('id', userId);
+              setUsers(prev => prev.map(u => u.id === userId ? { ...u, isBanned: !u.isBanned } : u));
+          }
+      } else {
+          const updated = users.map(u => {
+              if (u.id === userId) {
+                  if (checkIsAdminLocal(u.username)) return u;
+                  return { ...u, isBanned: !u.isBanned };
+              }
+              return u;
+          });
+          saveLocalUsers(updated);
+      }
+  };
+
+  const verifyUserForSupport = async (username: string, email: string, securityCode: string): Promise<User | null> => {
+      if (isSupabaseConfigured) {
+          const { data } = await supabase.from('profiles')
+            .select('*')
+            .ilike('username', username)
+            .eq('email', email)
+            .eq('security_code', securityCode)
+            .single();
+          
+          if (data) {
+              return {
+                  id: data.id,
+                  username: data.username,
+                  name: data.name,
+                  email: data.email,
+                  password: '',
+                  securityCode: data.security_code,
+                  isAdmin: data.is_admin,
+                  isBanned: data.is_banned,
+                  subscriptionExpiresAt: data.subscription_expires_at,
+                  createdAt: data.created_at
+              };
+          }
+          return null;
+      } else {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          return users.find(u => 
+            u.username.toLowerCase() === username.toLowerCase() && 
+            u.email.toLowerCase() === email.toLowerCase() && 
+            u.securityCode === securityCode
+          ) || null;
+      }
+  };
+
+  const resetPassword = async (userId: string, newPassword: string) => {
+      if (isSupabaseConfigured) {
+          await supabase.auth.updateUser({ password: newPassword });
+      } else {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          const updated = users.map(u => u.id === userId ? { ...u, password: newPassword } : u);
+          saveLocalUsers(updated);
+          if (currentUser?.id === userId) {
+              setCurrentUser({ ...currentUser, password: newPassword });
+          }
+      }
+  };
+
+  const updateEmail = async (userId: string, newEmail: string) => {
+      if (isSupabaseConfigured) {
+          await supabase.auth.updateUser({ email: newEmail });
+          await supabase.from('profiles').update({ email: newEmail }).eq('id', userId);
+      } else {
+          if (users.some(u => u.email.toLowerCase() === newEmail.toLowerCase() && u.id !== userId)) {
+              throw new Error("Email já em uso.");
+          }
+          const updated = users.map(u => u.id === userId ? { ...u, email: newEmail } : u);
+          saveLocalUsers(updated);
+          if (currentUser?.id === userId) {
+              setCurrentUser({ ...currentUser, email: newEmail });
+          }
+      }
+  };
+
+  const addSuggestion = async (text: string, user: User) => {
+      if (isSupabaseConfigured) {
+          await supabase.from('suggestions').insert({
+              user_id: user.id,
+              text: text
+          });
+      } else {
+          const newSug: Suggestion = {
+              id: Date.now().toString(),
+              userId: user.id,
+              username: user.username,
+              text,
+              createdAt: new Date().toISOString()
+          };
+          const updated = [newSug, ...suggestions];
+          setSuggestions(updated);
+          localStorage.setItem('provest_suggestions', JSON.stringify(updated));
+      }
   };
 
   const isPremium = (user: User): boolean => {
@@ -230,78 +426,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return new Date(user.subscriptionExpiresAt).getTime() > Date.now();
   };
 
-  // --- Funções do Bot de Suporte ---
-
-  const verifyUserForSupport = async (username: string, email: string, securityCode: string): Promise<User | null> => {
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Simula processamento
-      const user = users.find(u => 
-          u.username.toLowerCase() === username.toLowerCase() && 
-          u.email.toLowerCase() === email.toLowerCase() && 
-          u.securityCode === securityCode
-      );
-      return user || null;
-  };
-
-  const resetPassword = async (userId: string, newPassword: string) => {
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Simula escrita no banco
-      const updatedUsers = users.map(u => {
-          if (u.id === userId) {
-              return { ...u, password: newPassword };
-          }
-          return u;
-      });
-      saveUsers(updatedUsers);
-      
-      // Se o usuário resetado for o atual, atualiza sessão
-      if (currentUser && currentUser.id === userId) {
-          const updatedUser = { ...currentUser, password: newPassword };
-          setCurrentUser(updatedUser);
-          localStorage.setItem('provest_session', JSON.stringify(updatedUser));
-      }
-  };
-
-  const updateEmail = async (userId: string, newEmail: string) => {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Check duplication
-      if (users.some(u => u.email.toLowerCase() === newEmail.toLowerCase() && u.id !== userId)) {
-          throw new Error("Este email já está em uso por outro usuário.");
-      }
-
-      const updatedUsers = users.map(u => {
-          if (u.id === userId) {
-              return { ...u, email: newEmail };
-          }
-          return u;
-      });
-      saveUsers(updatedUsers);
-
-      if (currentUser && currentUser.id === userId) {
-          const updatedUser = { ...currentUser, email: newEmail };
-          setCurrentUser(updatedUser);
-          localStorage.setItem('provest_session', JSON.stringify(updatedUser));
-      }
-  };
-
-  const addSuggestion = (text: string, user: User) => {
-      const newSuggestion: Suggestion = {
-          id: Date.now().toString(),
-          userId: user.id,
-          username: user.username,
-          text: text,
-          createdAt: new Date().toISOString()
-      };
-      
-      setSuggestions(prev => {
-          const newState = [newSuggestion, ...prev];
-          localStorage.setItem('provest_suggestions', JSON.stringify(newState));
-          return newState;
-      });
-  };
-
   return (
     <AuthContext.Provider value={{ currentUser, users, suggestions, login, register, logout, updateUserSubscription, banUser, isPremium, verifyUserForSupport, resetPassword, updateEmail, addSuggestion }}>
-      {children}
+      {!loading && children}
     </AuthContext.Provider>
   );
 };
