@@ -69,13 +69,29 @@ create table if not exists public.suggestions (
   created_at timestamptz default now()
 );
 
--- 2. Habilitar Seguranca (RLS)
+-- 2. Limpar Politicas Antigas (Evita erro 42710)
+drop policy if exists "Perfis publicos" on public.profiles;
+drop policy if exists "Usuario atualiza proprio perfil" on public.profiles;
+drop policy if exists "Admin ve todos perfis" on public.profiles;
+
+drop policy if exists "Usuario ve suas transacoes" on public.transactions;
+drop policy if exists "Usuario cria suas transacoes" on public.transactions;
+drop policy if exists "Usuario deleta suas transacoes" on public.transactions;
+
+drop policy if exists "Usuario ve sua watchlist" on public.watchlist;
+drop policy if exists "Usuario cria na watchlist" on public.watchlist;
+drop policy if exists "Usuario deleta da watchlist" on public.watchlist;
+
+drop policy if exists "Admin ve sugestoes" on public.suggestions;
+drop policy if exists "Usuario envia sugestao" on public.suggestions;
+
+-- 3. Habilitar Seguranca (RLS)
 alter table public.profiles enable row level security;
 alter table public.transactions enable row level security;
 alter table public.watchlist enable row level security;
 alter table public.suggestions enable row level security;
 
--- 3. Politicas de Acesso (Policies)
+-- 4. Criar Novas Politicas
 -- Perfis
 create policy "Perfis publicos" on public.profiles for select using (true);
 create policy "Usuario atualiza proprio perfil" on public.profiles for update using (auth.uid() = id);
@@ -95,7 +111,7 @@ create policy "Usuario deleta da watchlist" on public.watchlist for delete using
 create policy "Admin ve sugestoes" on public.suggestions for select using ((select is_admin from public.profiles where id = auth.uid()) = true);
 create policy "Usuario envia sugestao" on public.suggestions for insert with check (auth.uid() = user_id);
 
--- 4. Gatilho Automatico (Trigger)
+-- 5. Gatilho Automatico (Trigger)
 create or replace function public.handle_new_user() 
 returns trigger as $$
 begin
@@ -124,8 +140,21 @@ create trigger on_auth_user_created
         setTimeout(() => setCopied(false), 2000);
     };
 
+    // Reparo de Usuarios Fantasmas (Para quando Auth existe mas Profile nao)
+    const repairSQL = `
+insert into public.profiles (id, email, created_at)
+select id, email, created_at
+from auth.users
+where id not in (select id from public.profiles);
+`;
+
+    const handleCopyRepair = () => {
+        navigator.clipboard.writeText(repairSQL);
+        alert("Script de Reparo Copiado! Rode no Supabase SQL Editor.");
+    };
+
     // Verifica se o problema é filtro ou banco de dados vazio
-    const isDatabaseIssue = users.length <= 1 && !searchTerm; 
+    const isDatabaseIssue = users.length <= 1 && !searchTerm && !isRefreshing; 
     const isSearchEmpty = users.length > 1 && filteredUsers.length === 0;
 
     return (
@@ -317,8 +346,15 @@ create trigger on_auth_user_created
                                                         </div>
                                                     ) : (
                                                         <div className="py-10">
-                                                            <p className="text-lg font-medium">Nenhum usuário encontrado.</p>
-                                                            <p className="text-sm opacity-60">Tente um termo de busca diferente.</p>
+                                                            {/* Botão de Emergência para Usuários Fantasmas */}
+                                                            <p className="text-lg font-medium mb-2">Nenhum usuário encontrado.</p>
+                                                            <p className="text-sm opacity-60 mb-6">Se houver usuários registrados mas não aparecem aqui, pode haver uma dessincronização.</p>
+                                                            <button 
+                                                                onClick={handleCopyRepair}
+                                                                className="text-xs text-brand-primary hover:underline opacity-80"
+                                                            >
+                                                                Copiar Script de Reparo de Usuários
+                                                            </button>
                                                         </div>
                                                     )}
                                                 </td>
