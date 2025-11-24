@@ -123,14 +123,16 @@ const Dashboard: React.FC = () => {
   }));
 
   const formatXAxis = (val: string) => {
-      const d = new Date(val);
-      if (selectedRange === '1D') {
-          return d.toLocaleTimeString(settings.language, { hour: '2-digit', minute: '2-digit' });
-      }
-      if (selectedRange === '5D' || selectedRange === '1M') {
-          return `${d.getDate()}/${d.getMonth() + 1}`;
-      }
-      return `${d.getMonth() + 1}/${d.getFullYear().toString().substr(2)}`;
+      try {
+          const d = new Date(val);
+          if (selectedRange === '1D') {
+              return d.toLocaleTimeString(settings.language, { hour: '2-digit', minute: '2-digit' });
+          }
+          if (selectedRange === '5D' || selectedRange === '1M') {
+              return `${d.getDate()}/${d.getMonth() + 1}`;
+          }
+          return `${d.getMonth() + 1}/${d.getFullYear().toString().substr(2)}`;
+      } catch { return ''; }
   };
 
   return (
@@ -226,7 +228,9 @@ const Dashboard: React.FC = () => {
                             tickLine={false} 
                             axisLine={false} 
                             tickFormatter={(value) => {
-                                return new Intl.NumberFormat(settings.language, { style: 'currency', currency: settings.currency, notation: 'compact' }).format(value);
+                                try {
+                                    return new Intl.NumberFormat(settings.language, { style: 'currency', currency: settings.currency, notation: 'compact' }).format(value);
+                                } catch { return '' }
                             }} 
                             width={45}
                             domain={['auto', 'auto']} 
@@ -244,21 +248,27 @@ const Dashboard: React.FC = () => {
                             itemStyle={{ fontSize: '12px', fontWeight: 600 }}
                             labelStyle={{ color: '#8B949E', fontSize: '11px', marginBottom: '8px' }}
                             labelFormatter={(label) => {
-                                const d = new Date(label as string);
-                                return d.toLocaleString(settings.language, { 
-                                    weekday: 'short', 
-                                    day: '2-digit', 
-                                    month: 'short', 
-                                    hour: '2-digit', 
-                                    minute: '2-digit'
-                                });
+                                try {
+                                    const d = new Date(label as string);
+                                    return d.toLocaleString(settings.language, { 
+                                        weekday: 'short', 
+                                        day: '2-digit', 
+                                        month: 'short', 
+                                        hour: '2-digit', 
+                                        minute: '2-digit'
+                                    });
+                                } catch { return ''; }
                             }}
                             formatter={(value, name) => {
                                 const isNetWorth = name === 'Patrimônio' || name === 'Net Worth' || name === 'Valor' || name === t('netWorth');
                                 const color = isNetWorth ? '#58A6FF' : '#8B949E';
+                                let formatted = '';
+                                try {
+                                    formatted = new Intl.NumberFormat(settings.language, { style: 'currency', currency: settings.currency }).format(value as number);
+                                } catch { formatted = `${value}` }
                                 return [
                                     <span style={{ color: color }}>
-                                        {new Intl.NumberFormat(settings.language, { style: 'currency', currency: settings.currency }).format(value as number)}
+                                        {formatted}
                                     </span>, 
                                     name
                                 ];

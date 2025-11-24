@@ -89,8 +89,20 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Local Storage Hooks (Fallback)
   const [localTransactions, setLocalTransactions] = useLocalStorage<Transaction[]>(`transactions_${userKey}`, []);
   const [localWatchlist, setLocalWatchlist] = useLocalStorage<string[]>(`watchlist_${userKey}`, []);
+  
+  // Settings with Validation Guard
   const [settings, setSettings] = useLocalStorage<AppSettings>('appSettings', { currency: 'BRL', language: 'pt-BR' });
   
+  // Settings Guard: Ensure valid values on load to prevent crash
+  useEffect(() => {
+      if (settings.currency !== 'BRL' && settings.currency !== 'USD') {
+          setSettings(prev => ({ ...prev, currency: 'BRL' }));
+      }
+      if (settings.language !== 'pt-BR' && settings.language !== 'en-US') {
+          setSettings(prev => ({ ...prev, language: 'pt-BR' }));
+      }
+  }, []);
+
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [assets, setAssets] = useState<Record<string, Asset>>({});
   const [fxRate, setFxRate] = useState(5.25); 
@@ -143,8 +155,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
               } catch (err) {
                   console.error("Erro crítico ao carregar dados da nuvem:", err);
-                  // Alert user if sync fails completely
-                  // alert("Erro de conexão. Seus dados podem não estar visíveis.");
               }
           } else {
               // Modo Local
@@ -245,7 +255,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         try {
             // DATABASE INSERT
             const { data, error } = await supabase.from('transactions').insert({
-                user_id: currentUser.id, // Ensure user_id is correct
+                user_id: currentUser.id,
                 ticker: cleanTicker,
                 quantity: transaction.quantity,
                 price: transaction.price,
@@ -256,18 +266,15 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             if (error) throw error;
 
             if (data) {
-                // Update with real ID
                 setTransactions(prev => prev.map(t => t.id === tempId ? { ...t, id: data.id } : t));
             }
         } catch(e) {
             console.error("CRITICAL ERROR: Failed to save transaction to DB", e);
-            // Rollback
             setTransactions(prev => prev.filter(t => t.id !== tempId));
             alert("Erro ao salvar transação na nuvem. Verifique sua conexão.");
         }
 
     } else {
-        // Local Fallback
         const newTransaction = { 
             ...transaction, 
             ticker: cleanTicker, 
@@ -279,7 +286,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [isPremiumUser, validTickers, uniqueAssets, currentUser, setLocalTransactions]);
 
   const importTransactions = useCallback(async (newTransactions: Omit<Transaction, 'id'>[]) => {
-      // Stub for compatibility
+      // Stub
   }, []);
 
   const removeTransaction = useCallback(async (id: string) => {
@@ -345,118 +352,134 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [setSettings]);
 
   const formatDisplayValue = useCallback((valueInUSD: number) => {
-      if (isNaN(valueInUSD)) return 'R$ 0,00';
-      const isBRL = settings.currency === 'BRL';
-      const finalValue = isBRL ? valueInUSD * fxRate : valueInUSD;
-      return new Intl.NumberFormat(settings.language, { style: 'currency', currency: settings.currency }).format(finalValue);
+      try {
+          if (isNaN(valueInUSD)) return 'R$ 0,00';
+          const isBRL = settings.currency === 'BRL';
+          const finalValue = isBRL ? valueInUSD * fxRate : valueInUSD;
+          return new Intl.NumberFormat(settings.language, { style: 'currency', currency: settings.currency }).format(finalValue);
+      } catch (e) {
+          // Fallback safe formatter if Intl fails
+          return settings.currency === 'BRL' ? `R$ ${valueInUSD.toFixed(2)}` : `$ ${valueInUSD.toFixed(2)}`;
+      }
   }, [settings.currency, settings.language, fxRate]);
 
   const t = useCallback((key: keyof typeof translations['pt-BR']) => {
       return translations[settings.language][key] || key;
   }, [settings.language]);
 
-  // --- CALCULATION LOGIC ---
+  // --- CALCULATION LOGIC (CRASH GUARD) ---
   const { holdings, totalValue, totalInvested, totalGainLoss, totalGainLossPercent, dayChange, dayChangePercent } = useMemo(() => {
-    const holdingsMap: any = {};
-    for (const t of transactions) {
-      if (!holdingsMap[t.ticker]) {
-        holdingsMap[t.ticker] = { ticker: t.ticker, totalQuantity: 0, totalInvested: 0, transactions: [] };
-      }
-      const holding = holdingsMap[t.ticker];
-      holding.totalInvested += Number(t.totalCost) || 0; 
-      holding.totalQuantity += Number(t.quantity) || 0;
-      holding.transactions.push(t);
-    }
-    
-    const holdingsList = Object.values(holdingsMap).map((h: any) => {
-      const asset = assets[h.ticker];
-      const quote = quotes[h.ticker];
-      if (!asset) return null;
-
-      h.averagePrice = h.totalQuantity > 0 ? h.totalInvested / h.totalQuantity : 0;
-      h.currentValue = quote ? (Number(quote.price) * h.totalQuantity) : 0;
-      h.currentValue = isNaN(h.currentValue) ? 0 : h.currentValue;
-      
-      h.totalGainLoss = h.currentValue - h.totalInvested;
-      h.totalGainLossPercent = h.totalInvested > 0 ? (h.totalGainLoss / h.totalInvested) * 100 : 0;
-      
-      let holdingDayChange = 0;
-      let holdingDayChangeUSD = 0; 
-
-      if (quote) {
-          const now = new Date();
-          h.transactions.forEach((t: Transaction) => {
-             const txDate = new Date(t.dateTime);
-             const isToday = txDate.getDate() === now.getDate() && txDate.getMonth() === now.getMonth();
-             if (isToday) {
-                 holdingDayChange += (quote.price - t.price) * t.quantity;
-             } else {
-                 const prev = quote.previousClose || quote.price;
-                 holdingDayChange += (quote.price - prev) * t.quantity;
-             }
-          });
-      }
-      
-      // Convert Day Change to USD Base
-      const isBRLAsset = h.asset.country === 'Brazil';
-      const rateToUSD = isBRLAsset && fxRate > 0 ? (1/fxRate) : 1;
-      holdingDayChangeUSD = holdingDayChange * rateToUSD;
-
-      const dayPercent = (h.currentValue - holdingDayChange) > 0 ? (holdingDayChange / (h.currentValue - holdingDayChange)) * 100 : 0;
-
-      return { 
-          ...h, 
-          asset, 
-          quote: quote || null, 
-          dayChange: holdingDayChange || 0, 
-          dayChangeUSD: holdingDayChangeUSD || 0,
-          dayChangePercent: dayPercent || 0 
-      };
-    }).filter((h: any) => h !== null);
-
-    let totalValueUSD = 0, totalInvestedUSD = 0, dayChangeUSD = 0;
-    
-    const finalHoldings = holdingsList.map((h: any) => {
-        const isBRL = h.asset.country === 'Brazil';
-        const rate = isBRL && fxRate > 0 ? (1/fxRate) : 1;
-        
-        const isLocked = !validTickers.includes(h.asset.ticker);
-        
-        const cvUSD = h.currentValue * rate;
-        const tiUSD = h.totalInvested * rate;
-        
-        // Use the pre-calculated USD Day Change
-        const dcUSD = h.dayChangeUSD;
-
-        if (!isLocked) {
-            totalValueUSD += cvUSD || 0;
-            totalInvestedUSD += tiUSD || 0;
-            dayChangeUSD += dcUSD || 0;
+    try {
+        const holdingsMap: any = {};
+        for (const t of transactions) {
+          if (!holdingsMap[t.ticker]) {
+            holdingsMap[t.ticker] = { ticker: t.ticker, totalQuantity: 0, totalInvested: 0, transactions: [] };
+          }
+          const holding = holdingsMap[t.ticker];
+          holding.totalInvested += Number(t.totalCost) || 0; 
+          holding.totalQuantity += Number(t.quantity) || 0;
+          holding.transactions.push(t);
         }
+        
+        const holdingsList = Object.values(holdingsMap).map((h: any) => {
+          const asset = assets[h.ticker];
+          const quote = quotes[h.ticker];
+          if (!asset) return null;
+
+          h.averagePrice = h.totalQuantity > 0 ? h.totalInvested / h.totalQuantity : 0;
+          h.currentValue = quote ? (Number(quote.price) * h.totalQuantity) : 0;
+          h.currentValue = isNaN(h.currentValue) ? 0 : h.currentValue;
+          
+          h.totalGainLoss = h.currentValue - h.totalInvested;
+          h.totalGainLossPercent = h.totalInvested > 0 ? (h.totalGainLoss / h.totalInvested) * 100 : 0;
+          
+          let holdingDayChange = 0;
+          let holdingDayChangeUSD = 0; 
+
+          if (quote) {
+              const now = new Date();
+              h.transactions.forEach((t: Transaction) => {
+                 const txDate = new Date(t.dateTime);
+                 const isToday = txDate.getDate() === now.getDate() && txDate.getMonth() === now.getMonth();
+                 if (isToday) {
+                     holdingDayChange += (quote.price - t.price) * t.quantity;
+                 } else {
+                     const prev = quote.previousClose || quote.price;
+                     holdingDayChange += (quote.price - prev) * t.quantity;
+                 }
+              });
+          }
+          
+          const isBRLAsset = h.asset.country === 'Brazil';
+          const rateToUSD = isBRLAsset && fxRate > 0 ? (1/fxRate) : 1;
+          holdingDayChangeUSD = holdingDayChange * rateToUSD;
+
+          const dayPercent = (h.currentValue - holdingDayChange) > 0 ? (holdingDayChange / (h.currentValue - holdingDayChange)) * 100 : 0;
+
+          return { 
+              ...h, 
+              asset, 
+              quote: quote || null, 
+              dayChange: holdingDayChange || 0, 
+              dayChangeUSD: holdingDayChangeUSD || 0,
+              dayChangePercent: dayPercent || 0 
+          };
+        }).filter((h: any) => h !== null);
+
+        let totalValueUSD = 0, totalInvestedUSD = 0, dayChangeUSD = 0;
+        
+        const finalHoldings = holdingsList.map((h: any) => {
+            const isBRL = h.asset.country === 'Brazil';
+            const rate = isBRL && fxRate > 0 ? (1/fxRate) : 1;
+            
+            const isLocked = !validTickers.includes(h.asset.ticker);
+            
+            const cvUSD = h.currentValue * rate;
+            const tiUSD = h.totalInvested * rate;
+            const dcUSD = h.dayChangeUSD;
+
+            if (!isLocked) {
+                totalValueUSD += cvUSD || 0;
+                totalInvestedUSD += tiUSD || 0;
+                dayChangeUSD += dcUSD || 0;
+            }
+
+            return {
+                ...h,
+                currentValueUSD: cvUSD || 0,
+                totalInvestedUSD: tiUSD || 0,
+                totalGainLossUSD: (cvUSD - tiUSD) || 0,
+                dayChangeUSD: dcUSD,
+                isLocked
+            };
+        }).sort((a: any, b: any) => b.currentValueUSD - a.currentValueUSD);
+
+        const tglUSD = totalValueUSD - totalInvestedUSD;
+        const tglpUSD = totalInvestedUSD > 0 ? (tglUSD / totalInvestedUSD) * 100 : 0;
+        const dcpUSD = (totalValueUSD - dayChangeUSD) > 0 ? (dayChangeUSD / (totalValueUSD - dayChangeUSD)) * 100 : 0;
 
         return {
-            ...h,
-            currentValueUSD: cvUSD || 0,
-            totalInvestedUSD: tiUSD || 0,
-            totalGainLossUSD: (cvUSD - tiUSD) || 0,
-            dayChangeUSD: dcUSD,
-            isLocked
+            holdings: finalHoldings,
+            totalValue: totalValueUSD || 0,
+            totalInvested: totalInvestedUSD || 0,
+            totalGainLoss: tglUSD || 0,
+            totalGainLossPercent: tglpUSD || 0,
+            dayChange: dayChangeUSD || 0,
+            dayChangePercent: dcpUSD || 0
         };
-    }).sort((a: any, b: any) => b.currentValueUSD - a.currentValueUSD);
-
-    const tglUSD = totalValueUSD - totalInvestedUSD;
-    const tglpUSD = totalInvestedUSD > 0 ? (tglUSD / totalInvestedUSD) * 100 : 0;
-    const dcpUSD = (totalValueUSD - dayChangeUSD) > 0 ? (dayChangeUSD / (totalValueUSD - dayChangeUSD)) * 100 : 0;
-
-    return {
-        holdings: finalHoldings,
-        totalValue: totalValueUSD || 0,
-        totalInvested: totalInvestedUSD || 0,
-        totalGainLoss: tglUSD || 0,
-        totalGainLossPercent: tglpUSD || 0,
-        dayChange: dayChangeUSD || 0,
-        dayChangePercent: dcpUSD || 0
-    };
+    } catch (error) {
+        console.error("PORTFOLIO CRASH GUARD ACTIVATED:", error);
+        // Return safe default state to prevent blue screen
+        return {
+            holdings: [],
+            totalValue: 0,
+            totalInvested: 0,
+            totalGainLoss: 0,
+            totalGainLossPercent: 0,
+            dayChange: 0,
+            dayChangePercent: 0
+        };
+    }
 
   }, [transactions, quotes, assets, fxRate, validTickers]);
 
