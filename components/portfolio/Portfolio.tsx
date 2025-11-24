@@ -1,16 +1,14 @@
 
-
 import React, { useState } from 'react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { Holding, MarketState } from '../../types';
 import { AddTransactionModal } from './AddTransactionModal';
-import { ImportTransactionModal } from './ImportTransactionModal';
 import { Card, CardContent } from '../ui/Card';
 import { HoldingCard } from './HoldingCard';
 import { TransactionHistoryModal } from './TransactionHistoryModal';
 import { formatCurrency, formatPercent } from '../../utils/formatters';
 
-// Icons... (Existing Icons)
+// Icons
 const ClockIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -32,12 +30,6 @@ const MoonIcon = () => (
 const SunIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-    </svg>
-);
-
-const UploadIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
     </svg>
 );
 
@@ -151,7 +143,6 @@ const HoldingRow: React.FC<HoldingRowProps> = ({ holding, onShowHistory, onRemov
 const Portfolio: React.FC = () => {
   const { holdings, totalValue, removeHolding, formatDisplayValue, settings, t, canAddAsset } = usePortfolio();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [historyModalHolding, setHistoryModalHolding] = useState<Holding | null>(null);
 
   return (
@@ -175,13 +166,6 @@ const Portfolio: React.FC = () => {
             </div>
         </div>
         <div className="flex gap-2 w-full md:w-auto">
-            <button
-                onClick={() => setIsImportModalOpen(true)}
-                className="p-2.5 rounded-lg bg-brand-surface border border-brand-border hover:bg-brand-border/50 text-brand-secondary hover:text-brand-text transition-colors"
-                title={t('importTransactions')}
-            >
-                <UploadIcon />
-            </button>
             <button
             onClick={() => {
                 if (canAddAsset) {
@@ -262,7 +246,6 @@ const Portfolio: React.FC = () => {
       </div>
 
       {isAddModalOpen && <AddTransactionModal onClose={() => setIsAddModalOpen(false)} />}
-      {isImportModalOpen && <ImportTransactionModal onClose={() => setIsImportModalOpen(false)} />}
       {historyModalHolding && <TransactionHistoryModal holding={historyModalHolding} onClose={() => setHistoryModalHolding(null)} />}
     </div>
   );
