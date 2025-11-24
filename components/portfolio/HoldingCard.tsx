@@ -33,9 +33,9 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
   const { asset, quote, totalQuantity, averagePrice, currentValue, totalGainLoss, totalGainLossPercent, dayChange, dayChangePercent } = holding;
   const currency = asset.country === 'Brazil' ? 'BRL' : 'USD';
 
-  const isDayChangePositive = dayChange >= 0;
-  const isTotalReturnPositive = totalGainLoss >= 0;
-  const dayChangeValue = dayChange;
+  const isDayChangePositive = (dayChange ?? 0) >= 0;
+  const isTotalReturnPositive = (totalGainLoss ?? 0) >= 0;
+  const dayChangeValue = dayChange ?? 0;
   
   // New Logic: Calculate per-share gain/loss
   const currentPrice = quote ? quote.price : 0;
@@ -47,6 +47,10 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
       e.stopPropagation();
       removeHolding(asset.ticker);
   };
+
+  // Safeguard calculations
+  const safeDayChangePercent = isNaN(dayChangePercent) || dayChangePercent === null ? 0 : dayChangePercent;
+  const safeTotalGainLossPercent = isNaN(totalGainLossPercent) || totalGainLossPercent === null ? 0 : totalGainLossPercent;
 
   return (
     <Card>
@@ -79,8 +83,8 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
             <div>
                 <p className="text-brand-secondary text-xs uppercase font-bold tracking-wider mb-1">{t('totalReturn')} (Carteira)</p>
                 <div className={`font-medium text-base ${isTotalReturnPositive ? 'text-brand-success' : 'text-brand-danger'}`}>
-                    <span>{formatCurrency(totalGainLoss, currency)}</span>
-                    <span className="ml-1 text-xs opacity-80">({formatPercent(totalGainLossPercent)})</span>
+                    <span>{formatCurrency(totalGainLoss ?? 0, currency)}</span>
+                    <span className="ml-1 text-xs opacity-80">({formatPercent(safeTotalGainLossPercent)})</span>
                 </div>
             </div>
 
@@ -91,7 +95,7 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
                     {quote ? (
                         <>
                             <span>{isDayChangePositive ? '+' : ''}{formatCurrency(dayChangeValue, currency)}</span>
-                            <span className="ml-1 text-xs opacity-80">({dayChangePercent.toFixed(2)}%)</span>
+                            <span className="ml-1 text-xs opacity-80">({safeDayChangePercent.toFixed(2)}%)</span>
                         </>
                     ) : '...'}
                 </div>

@@ -78,6 +78,11 @@ const HoldingRow: React.FC<HoldingRowProps> = ({ holding, onShowHistory, onRemov
       )
   }
 
+  // SAFETY CHECK: Default to 0 if null/undefined to prevent white screen crash
+  const change = quote?.change ?? 0;
+  const changePercent = quote?.changePercent ?? 0;
+  const price = quote?.price ?? 0;
+
   return (
     <tr className="border-b border-brand-border hover:bg-brand-surface/50 transition-colors group">
       <td className="p-4">
@@ -107,10 +112,10 @@ const HoldingRow: React.FC<HoldingRowProps> = ({ holding, onShowHistory, onRemov
                 {quote.marketState === MarketState.POST && (
                     <span title="Pós-Mercado" className="animate-pulse"><MoonIcon /></span>
                 )}
-                <p className="font-medium text-brand-text">{formatCurrency(quote.price, currency)}</p>
+                <p className="font-medium text-brand-text">{formatCurrency(price, currency)}</p>
             </div>
-            <p className={`text-xs ${quote.change >= 0 ? 'text-brand-success' : 'text-brand-danger'}`}>
-              {quote.change >= 0 ? '+' : ''}{quote.change.toFixed(2)} ({quote.changePercent.toFixed(2)}%)
+            <p className={`text-xs ${change >= 0 ? 'text-brand-success' : 'text-brand-danger'}`}>
+              {change >= 0 ? '+' : ''}{change.toFixed(2)} ({changePercent.toFixed(2)}%)
             </p>
           </div>
         ) : (

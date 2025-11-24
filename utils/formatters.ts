@@ -1,5 +1,10 @@
 
 export const formatCurrency = (value: number, currency: 'BRL' | 'USD') => {
+    // Robust check for NaN or Infinity
+    if (value === undefined || value === null || isNaN(value) || !isFinite(value)) {
+        return currency === 'BRL' ? 'R$ 0,00' : '$ 0.00';
+    }
+
     // Standard Financial Display (Totals, Gains, Net Worth)
     // Clean: Always 2 decimals unless value is extremely small (dust)
     const absValue = Math.abs(value);
@@ -22,6 +27,10 @@ export const formatCurrency = (value: number, currency: 'BRL' | 'USD') => {
 };
 
 export const formatUnitPrice = (value: number, currency: 'BRL' | 'USD') => {
+    if (value === undefined || value === null || isNaN(value) || !isFinite(value)) {
+        return '-';
+    }
+
     // Specific formatter for Unit Prices (Quote Price, Average Price)
     // Needs higher precision for crypto/penny stocks, but clean for standard assets
     const absValue = Math.abs(value);
@@ -56,13 +65,22 @@ export const formatUnitPrice = (value: number, currency: 'BRL' | 'USD') => {
 };
 
 export const formatPercent = (value: number) => {
+    if (value === undefined || value === null || isNaN(value) || !isFinite(value)) {
+        return '0.00%';
+    }
     return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
 };
 
-export const formatDate = (isoString: string) => new Date(isoString).toLocaleString('pt-BR', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-});
+export const formatDate = (isoString: string) => {
+    if (!isoString) return '';
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return '';
+    
+    return date.toLocaleString('pt-BR', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+};

@@ -10,8 +10,10 @@ import { HistoricalDataPoint, Transaction, Quote } from '../../types';
 import { AdminPanel } from '../admin/AdminPanel';
 
 const SummaryCard: React.FC<{ title: string; value: string; change?: number; changePercent?: number; displayChange?: string }> = ({ title, value, change, changePercent, displayChange }) => {
+  const safeChange = change ?? 0;
+  const safeChangePercent = changePercent ?? 0;
   const hasChange = change !== undefined && changePercent !== undefined;
-  const isPositive = hasChange && change >= 0;
+  const isPositive = hasChange && safeChange >= 0;
 
   return (
     <Card className="relative overflow-hidden">
@@ -24,7 +26,7 @@ const SummaryCard: React.FC<{ title: string; value: string; change?: number; cha
         {hasChange && (
           <div className="flex items-center mt-3">
              <span className={`flex items-center text-sm font-bold px-2 py-0.5 rounded ${isPositive ? 'text-brand-success bg-brand-success/10' : 'text-brand-danger bg-brand-danger/10'}`}>
-                {isPositive ? '▲' : '▼'} {displayChange} ({Math.abs(changePercent!).toFixed(2)}%)
+                {isPositive ? '▲' : '▼'} {displayChange} ({Math.abs(safeChangePercent).toFixed(2)}%)
              </span>
           </div>
         )}

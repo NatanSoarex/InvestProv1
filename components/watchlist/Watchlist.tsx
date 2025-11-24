@@ -23,11 +23,13 @@ const WatchlistItem: React.FC<{
 }> = ({ asset, quote, onRemove, t }) => {
   const currency = asset.country === 'Brazil' ? 'BRL' : 'USD';
   
-  const changePercent = quote ? quote.changePercent : 0;
-  const changeValue = quote ? quote.change : 0;
+  const changePercent = quote?.changePercent ?? 0;
+  const changeValue = quote?.change ?? 0;
+  const price = quote?.price ?? 0;
+  
   const isPositive = changeValue >= 0;
-  const isNegative = changeValue < 0;
-
+  const isZero = changeValue === 0 && changePercent === 0;
+  
   const timeLabel = asset.assetClass === 'Crypto' ? '24h' : 'Hoje';
 
   const handleRemove = (e: React.MouseEvent) => {
@@ -75,13 +77,16 @@ const WatchlistItem: React.FC<{
                  <div>
                     <div className="flex items-center gap-2 mb-1">
                         <span className="text-3xl font-black text-brand-text tracking-tighter">
-                            {formatUnitPrice(quote.price, currency)}
+                            {formatUnitPrice(price, currency)}
                         </span>
                         <MarketBadge state={quote.marketState} />
                     </div>
                     <div className="flex items-center justify-between mt-2">
-                         <span className={`text-sm font-bold flex items-center gap-1.5 px-2 py-1 rounded-lg ${isPositive ? 'bg-[#3FB950]/10 text-[#3FB950]' : 'bg-[#F85149]/10 text-[#F85149]'}`}>
-                             {isPositive ? '▲' : '▼'} {formatCurrency(changeValue, currency)}
+                         <span className={`text-sm font-bold flex items-center gap-1.5 px-2 py-1 rounded-lg ${
+                             isZero ? 'bg-brand-secondary/10 text-brand-secondary' :
+                             isPositive ? 'bg-[#3FB950]/10 text-[#3FB950]' : 'bg-[#F85149]/10 text-[#F85149]'
+                         }`}>
+                             {!isZero && (isPositive ? '▲' : '▼')} {formatCurrency(Math.abs(changeValue), currency)}
                              <span className="opacity-80 font-normal">({Math.abs(changePercent).toFixed(2)}%)</span>
                          </span>
                          
@@ -104,13 +109,12 @@ const WatchlistItem: React.FC<{
 const Watchlist: React.FC = () => {
   const { watchlist, getAssetDetails, getLiveQuote, removeFromWatchlist, t } = usePortfolio();
   const [assets, setAssets] = useState<Asset[]>([]);
-  const [loading, setLoading] = useState(false); // Initially false to show data fast if cached
+  const [loading, setLoading] = useState(false); 
 
   useEffect(() => {
     const loadWatchlist = async () => {
-      if (watchlist.length > assets.length) setLoading(true); // Only show loading if we are missing items
+      if (watchlist.length > assets.length) setLoading(true); 
       
-      // Parallel fetch but prioritize UI
       const data = await Promise.all(watchlist.map(ticker => getAssetDetails(ticker)));
       setAssets(data.filter((a): a is Asset => !!a));
       

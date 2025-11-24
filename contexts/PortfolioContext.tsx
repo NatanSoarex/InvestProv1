@@ -356,6 +356,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [setSettings]);
 
   const formatDisplayValue = useCallback((valueInUSD: number) => {
+      if (isNaN(valueInUSD)) return 'R$ 0,00';
       const isBRL = settings.currency === 'BRL';
       const finalValue = isBRL ? valueInUSD * fxRate : valueInUSD;
       return new Intl.NumberFormat(settings.language, { style: 'currency', currency: settings.currency }).format(finalValue);
@@ -386,6 +387,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       h.averagePrice = h.totalQuantity > 0 ? h.totalInvested / h.totalQuantity : 0;
       h.currentValue = quote ? (Number(quote.price) * h.totalQuantity) : 0;
+      // SAFETY: Ensure numbers aren't NaN
+      h.currentValue = isNaN(h.currentValue) ? 0 : h.currentValue;
+      
       h.totalGainLoss = h.currentValue - h.totalInvested;
       h.totalGainLossPercent = h.totalInvested > 0 ? (h.totalGainLoss / h.totalInvested) * 100 : 0;
       
@@ -405,7 +409,13 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
       const dayPercent = (h.currentValue - holdingDayChange) > 0 ? (holdingDayChange / (h.currentValue - holdingDayChange)) * 100 : 0;
 
-      return { ...h, asset, quote: quote || null, dayChange: holdingDayChange, dayChangePercent: dayPercent };
+      return { 
+          ...h, 
+          asset, 
+          quote: quote || null, 
+          dayChange: holdingDayChange || 0, 
+          dayChangePercent: dayPercent || 0 
+      };
     }).filter((h: any) => h !== null);
 
     let totalValueUSD = 0, totalInvestedUSD = 0, dayChangeUSD = 0;
@@ -421,16 +431,16 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const dcUSD = h.dayChange * rate;
 
         if (!isLocked) {
-            totalValueUSD += cvUSD;
-            totalInvestedUSD += tiUSD;
-            dayChangeUSD += dcUSD;
+            totalValueUSD += cvUSD || 0;
+            totalInvestedUSD += tiUSD || 0;
+            dayChangeUSD += dcUSD || 0;
         }
 
         return {
             ...h,
-            currentValueUSD: cvUSD,
-            totalInvestedUSD: tiUSD,
-            totalGainLossUSD: cvUSD - tiUSD,
+            currentValueUSD: cvUSD || 0,
+            totalInvestedUSD: tiUSD || 0,
+            totalGainLossUSD: (cvUSD - tiUSD) || 0,
             isLocked
         };
     }).sort((a: any, b: any) => b.currentValueUSD - a.currentValueUSD);
@@ -441,12 +451,12 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     return {
         holdings: finalHoldings,
-        totalValue: totalValueUSD,
-        totalInvested: totalInvestedUSD,
-        totalGainLoss: tglUSD,
-        totalGainLossPercent: tglpUSD,
-        dayChange: dayChangeUSD,
-        dayChangePercent: dcpUSD
+        totalValue: totalValueUSD || 0,
+        totalInvested: totalInvestedUSD || 0,
+        totalGainLoss: tglUSD || 0,
+        totalGainLossPercent: tglpUSD || 0,
+        dayChange: dayChangeUSD || 0,
+        dayChangePercent: dcpUSD || 0
     };
 
   }, [transactions, quotes, assets, fxRate, validTickers]);
