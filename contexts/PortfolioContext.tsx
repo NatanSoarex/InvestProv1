@@ -45,7 +45,6 @@ interface PortfolioContextType {
 
 const PortfolioContext = createContext<PortfolioContextType | undefined>(undefined);
 
-// Hook LocalStorage (Mantido para fallback)
 const useLocalStorage = <T,>(key: string, initialValue: T) => {
   const [storedValue, setStoredValue] = useState<T>(() => {
     try {
@@ -76,7 +75,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [watchlist, setWatchlist] = useState<string[]>([]);
   
-  // Local Storage Hooks (Apenas para fallback ou configurações locais)
+  // Local Storage Hooks (Fallback)
   const [localTransactions, setLocalTransactions] = useLocalStorage<Transaction[]>(`transactions_${userKey}`, []);
   const [localWatchlist, setLocalWatchlist] = useLocalStorage<string[]>(`watchlist_${userKey}`, []);
   const [settings, setSettings] = useLocalStorage<AppSettings>('appSettings', { currency: 'BRL', language: 'pt-BR' });
@@ -90,46 +89,59 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const isPremiumUser = currentUser ? checkIsPremium(currentUser) : false;
 
-  // --- SYNC LOGIC (SUPABASE VS LOCAL) ---
-  
-  // Carregar Dados Iniciais
+  // --- SYNC LOGIC: LOAD DATA ON LOGIN ---
   useEffect(() => {
       const loadData = async () => {
           if (isSupabaseConfigured && currentUser) {
-              // Fetch Transactions from Supabase
-              const { data: txData } = await supabase
-                  .from('transactions')
-                  .select('*')
-                  .eq('user_id', currentUser.id);
-              
-              if (txData) {
-                  const mappedTx: Transaction[] = txData.map(t => ({
-                      id: t.id,
-                      ticker: t.ticker,
-                      quantity: Number(t.quantity),
-                      price: Number(t.price),
-                      totalCost: Number(t.total_cost),
-                      dateTime: t.date_time
-                  }));
-                  setTransactions(mappedTx);
-              }
+              try {
+                  // Fetch Transactions
+                  const { data: txData, error: txError } = await supabase
+                      .from('transactions')
+                      .select('*')
+                      .eq('user_id', currentUser.id);
+                  
+                  if (txError) throw txError;
 
-              // Fetch Watchlist from Supabase
-              const { data: wlData } = await supabase
-                  .from('watchlist')
-                  .select('ticker')
-                  .eq('user_id', currentUser.id);
-              
-              if (wlData) {
-                  setWatchlist(wlData.map(w => w.ticker));
+                  if (txData) {
+                      const mappedTx: Transaction[] = txData.map(t => ({
+                          id: t.id,
+                          ticker: t.ticker,
+                          quantity: Number(t.quantity),
+                          price: Number(t.price),
+                          totalCost: Number(t.total_cost),
+                          dateTime: t.date_time
+                      }));
+                      setTransactions(mappedTx);
+                  }
+
+                  // Fetch Watchlist
+                  const { data: wlData, error: wlError } = await supabase
+                      .from('watchlist')
+                      .select('ticker')
+                      .eq('user_id', currentUser.id);
+                  
+                  if (wlError) throw wlError;
+
+                  if (wlData) {
+                      setWatchlist(wlData.map(w => w.ticker));
+                  }
+              } catch (err) {
+                  console.error("Erro ao carregar dados da nuvem:", err);
+                  // Não fallback para local se estiver logado para evitar mistura de dados
               }
           } else {
-              // Use Local Storage
+              // Modo Local
               setTransactions(localTransactions);
               setWatchlist(localWatchlist);
           }
       };
-      loadData();
+      
+      if (currentUser) {
+          loadData();
+      } else {
+          setTransactions([]);
+          setWatchlist([]);
+      }
   }, [currentUser, localTransactions, localWatchlist]); 
 
   // --- HELPERS DE DADOS ---
@@ -203,7 +215,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
 
     if (isSupabaseConfigured && currentUser) {
-        // OPTIMISTIC UPDATE: Add to UI immediately
+        // OPTIMISTIC UPDATE
         const tempId = 'temp_' + Date.now();
         const optimisticTx: Transaction = {
             ...transaction,
@@ -213,10 +225,10 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         
         setTransactions(prev => [...prev, optimisticTx].sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime()));
 
-        // Background Sync
         try {
+            // DATABASE INSERT
             const { data, error } = await supabase.from('transactions').insert({
-                user_id: currentUser.id,
+                user_id: currentUser.id, // Ensure user_id is correct
                 ticker: cleanTicker,
                 quantity: transaction.quantity,
                 price: transaction.price,
@@ -224,18 +236,21 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 date_time: transaction.dateTime
             }).select().single();
 
+            if (error) throw error;
+
             if (data) {
-                // Replace temp ID with real ID
+                // Update with real ID
                 setTransactions(prev => prev.map(t => t.id === tempId ? { ...t, id: data.id } : t));
-            } else {
-                // Revert if error (optional, usually we just keep trying or show error)
-                console.error("Error adding transaction to DB:", error);
             }
         } catch(e) {
-            console.error("Sync error", e);
+            console.error("CRITICAL ERROR: Failed to save transaction to DB", e);
+            // Rollback
+            setTransactions(prev => prev.filter(t => t.id !== tempId));
+            alert("Erro ao salvar transação na nuvem. Verifique sua conexão.");
         }
 
     } else {
+        // Local Fallback
         const newTransaction = { 
             ...transaction, 
             ticker: cleanTicker, 
@@ -279,7 +294,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [uniqueAssets, isPremiumUser, currentUser, setLocalTransactions]);
 
   const removeTransaction = useCallback(async (id: string) => {
-    // Optimistic
     setTransactions(prev => prev.filter(t => t.id !== id));
     
     if (isSupabaseConfigured) {
@@ -291,8 +305,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const removeHolding = useCallback(async (ticker: string) => {
     const target = ticker.toUpperCase().trim();
-    
-    // Optimistic
     setTransactions(prev => prev.filter(t => t.ticker !== target));
 
     if (isSupabaseConfigured) {
@@ -304,17 +316,13 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const addToWatchlist = useCallback(async (ticker: string) => {
     const target = ticker.toUpperCase().trim();
-    
-    // Optimistic UI Update: Show it immediately
     setWatchlist(prev => Array.from(new Set([...prev, target])));
 
     if (isSupabaseConfigured && currentUser) {
         try {
-            // Background sync
             await supabase.from('watchlist').insert({ user_id: currentUser.id, ticker: target });
         } catch (error) {
-            // If duplicate error, ignore. If other error, log it.
-            console.log("Sync watchlist items (safe to ignore if duplicate)", error);
+            console.log("Watchlist sync error (likely duplicate)", error);
         }
     } else {
         setLocalWatchlist(prev => Array.from(new Set([...prev, target])));
@@ -323,8 +331,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const removeFromWatchlist = useCallback(async (ticker: string) => {
     const target = ticker.toUpperCase().trim();
-    
-    // Optimistic
     setWatchlist(prev => prev.filter(t => t !== target));
 
     if (isSupabaseConfigured && currentUser) {
@@ -367,7 +373,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         holdingsMap[t.ticker] = { ticker: t.ticker, totalQuantity: 0, totalInvested: 0, transactions: [] };
       }
       const holding = holdingsMap[t.ticker];
-      holding.totalInvested += Number(t.totalCost);
+      // Critical fix: Ensure we use TotalCost for calculation accuracy
+      holding.totalInvested += Number(t.totalCost); 
       holding.totalQuantity += Number(t.quantity);
       holding.transactions.push(t);
     }
@@ -377,7 +384,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const quote = quotes[h.ticker];
       if (!asset) return null;
 
-      h.averagePrice = h.totalInvested / h.totalQuantity;
+      h.averagePrice = h.totalQuantity > 0 ? h.totalInvested / h.totalQuantity : 0;
       h.currentValue = quote ? (Number(quote.price) * h.totalQuantity) : 0;
       h.totalGainLoss = h.currentValue - h.totalInvested;
       h.totalGainLossPercent = h.totalInvested > 0 ? (h.totalGainLoss / h.totalInvested) * 100 : 0;

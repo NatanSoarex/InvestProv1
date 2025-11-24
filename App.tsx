@@ -21,23 +21,32 @@ export type View = 'dashboard' | 'portfolio' | 'search' | 'watchlist' | 'reports
 const AuthenticatedApp: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [isSupportOpen, setIsSupportOpen] = useState(false);
-  const { currentUser } = useAuth();
+  const { currentUser, isLoading } = useAuth();
 
   // FORCE DASHBOARD ON LOGIN
-  // This effect runs whenever currentUser changes (i.e., login happens).
-  // It resets the view to 'dashboard', fixing the issue of landing on Profile.
   useEffect(() => {
       if (currentUser) {
           setCurrentView('dashboard');
       }
-  }, [currentUser?.id]); // Only trigger if user ID changes (new login)
+  }, [currentUser?.id]); 
+
+  // Loading Spinner to prevent flicker or logout
+  if (isLoading) {
+      return (
+          <div className="flex min-h-screen items-center justify-center bg-brand-bg">
+              <div className="flex flex-col items-center gap-4">
+                  <div className="w-12 h-12 border-4 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin"></div>
+                  <p className="text-brand-secondary text-sm animate-pulse">Autenticando...</p>
+              </div>
+          </div>
+      );
+  }
 
   if (!currentUser) {
       return <AuthScreen />;
   }
 
   return (
-    // Reset Portfolio Context when user changes by using Key
     <PortfolioProvider key={currentUser.id}>
       <div className="flex min-h-screen font-sans">
         <Sidebar 
@@ -45,7 +54,6 @@ const AuthenticatedApp: React.FC = () => {
             setCurrentView={setCurrentView} 
             onOpenSupport={() => setIsSupportOpen(true)}
         />
-        {/* Adjusted padding to md:p-6 to minimize left gap as requested */}
         <main className="flex-1 p-4 md:p-6 overflow-y-auto pb-32 md:pb-8">
            <React.Suspense fallback={<div className="flex items-center justify-center h-full text-brand-primary">Carregando...</div>}>
              {currentView === 'dashboard' && <Dashboard />}
@@ -64,7 +72,6 @@ const AuthenticatedApp: React.FC = () => {
         />
       </div>
       
-      {/* Global Support Chat Modal */}
       {isSupportOpen && <SupportChat onClose={() => setIsSupportOpen(false)} />}
     </PortfolioProvider>
   );

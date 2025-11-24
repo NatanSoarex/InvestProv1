@@ -19,12 +19,12 @@ export interface AuthContextType {
   addSuggestion: (text: string, user: User) => void;
   refreshUserData: () => Promise<void>; 
   dbError: string | null;
+  isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // --- HELPER: RETRY LOGIC (INSISTENT SAVE) ---
-// Tenta executar uma função X vezes antes de desistir
 async function retryOperation<T>(operation: () => Promise<T>, retries = 3, delay = 1000): Promise<T> {
     try {
         return await operation();
@@ -39,7 +39,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // Global Loading State
   const [dbError, setDbError] = useState<string | null>(null);
 
   // --- LOCAL STORAGE HELPERS (Modo Offline) ---
@@ -88,7 +88,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           username,
           name,
           email: session.user.email || '',
-          password: '', // Never stored
+          password: '', 
           securityCode,
           isAdmin,
           isBanned,
@@ -121,51 +121,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (isSupabaseConfigured) {
             // MODO SUPABASE (Cloud)
-            const { data: { session } } = await supabase.auth.getSession();
-            
-            if (session?.user) {
-                const optimisticUser = mapSessionToUser(session);
-                setCurrentUser(optimisticUser);
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                
+                if (session?.user) {
+                    // 1. Immediate Login via Metadata
+                    const optimisticUser = mapSessionToUser(session);
+                    setCurrentUser(optimisticUser);
 
-                // Insistent Profile Fetch
-                (async () => {
-                    try {
-                        const { data: profile } = await supabase
-                            .from('profiles')
-                            .select('*')
-                            .eq('id', session.user.id)
-                            .single();
-                        
-                        if (profile) {
-                            const syncedUser = mapSessionToUser(session, profile);
-                            setCurrentUser(syncedUser);
+                    // 2. Silent DB Refresh
+                    (async () => {
+                        try {
+                            const { data: profile } = await supabase
+                                .from('profiles')
+                                .select('*')
+                                .eq('id', session.user.id)
+                                .single();
+                            
+                            if (profile) {
+                                const syncedUser = mapSessionToUser(session, profile);
+                                setCurrentUser(syncedUser);
+                            }
+                        } catch (err) {
+                            console.warn("Background profile sync failed, using session data.");
                         }
-                    } catch (err) {
-                        console.warn("Background sync failed (silent).", err);
-                    }
-                })();
+                    })();
+                }
+            } catch (error) {
+                console.error("Session check failed", error);
+            } finally {
+                setLoading(false);
             }
 
+            // LISTENER BLINDADO CONTRA LOGOUT ACIDENTAL
             supabase.auth.onAuthStateChange(async (event, session) => {
+                console.log("Auth Event:", event);
+                
                 if (event === 'SIGNED_OUT') {
                     setCurrentUser(null);
-                } else if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
-                     try {
-                        const { data: profile } = await supabase
-                            .from('profiles')
-                            .select('*')
-                            .eq('id', session.user.id)
-                            .single();
-                        
-                        const user = mapSessionToUser(session, profile || undefined);
-                        setCurrentUser(user);
-                     } catch (e) {
-                        // Fallback to metadata if DB fails
-                        if (!currentUser) {
-                            const user = mapSessionToUser(session);
-                            setCurrentUser(user);
-                        }
-                     }
+                    setLoading(false);
+                } else if (session?.user) {
+                    // Em qualquer evento de sessão válida (SIGNED_IN, TOKEN_REFRESHED, INITIAL_SESSION)
+                    // Garantimos que o usuário está setado
+                    if (!currentUser || event === 'SIGNED_IN') {
+                         const user = mapSessionToUser(session);
+                         setCurrentUser(user);
+                    }
+                    setLoading(false);
+                } else if (event === 'INITIAL_SESSION') {
+                    // Se inicializou e não tem sessão, termina loading
+                    setLoading(false);
                 }
             });
             
@@ -191,21 +196,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             
             const storedSuggestions = localStorage.getItem('provest_suggestions');
             if (storedSuggestions) setSuggestions(JSON.parse(storedSuggestions));
+            
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     initAuth();
-  }, []);
+  }, []); // Executa apenas uma vez na montagem
 
-  // --- ADMIN: REFRESH USER DATA (Robust) ---
+  // --- ADMIN: REFRESH USER DATA ---
   const refreshUserData = useCallback(async () => {
       if (!currentUser?.isAdmin) return;
       setDbError(null);
       
       if (isSupabaseConfigured) {
           try {
-              // Force fetch profiles
               const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
               
               if (error) {
@@ -228,7 +233,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   }));
                   setUsers(mappedUsers);
               } else {
-                  // If empty list but no error (RLS issue likely), try to show self
                   if (currentUser) setUsers([currentUser]);
               }
 
@@ -273,8 +277,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                  
                  if (data && data.email) {
                      emailToLogin = data.email;
-                 } else {
-                     // Silent failure: let signIn handle it or throw specific error
                  }
              } catch (e) {
                  throw new Error("Não foi possível encontrar este nome de usuário. Tente usar seu E-MAIL.");
@@ -286,6 +288,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return true;
 
     } else {
+        // Local Fallback
         await new Promise(resolve => setTimeout(resolve, 500));
         const user = users.find(u => 
             (u.username.toLowerCase() === username.toLowerCase() || u.email.toLowerCase() === username.toLowerCase()) 
@@ -306,7 +309,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const securityCode = generateUniqueSecurityCode(users); 
 
     if (isSupabaseConfigured) {
-        // --- STEP 1: STRICT DUPLICATE CHECK ---
+        // 1. Check Duplicates
         try {
             const { data: existingUser } = await supabase
                 .from('profiles')
@@ -321,7 +324,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (e.message && e.message.includes("ERRO CRÍTICO")) throw e;
         }
 
-        // --- STEP 2: CREATE AUTH USER ---
+        // 2. Create Auth
         const { data: authData, error } = await supabase.auth.signUp({
             email: data.email,
             password: data.password,
@@ -337,8 +340,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (error) throw new Error(error.message);
         
         if (authData.user) {
-            // --- STEP 3: INSISTENT SAVE (RETRY LOGIC) ---
-            // Force insert into profiles. Retries 3 times if connection fails.
+            // 3. Force Profile Creation
             const insertProfile = async () => {
                 const isAdmin = checkIsAdminLocal(data.username);
                 await supabase.from('profiles').insert({
@@ -354,11 +356,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             try {
                 await retryOperation(insertProfile, 3, 1000);
             } catch (profileErr) {
-                console.error("Failed to force-save profile after retries:", profileErr);
-                // If duplicate key error, it means trigger worked or user exists. Good.
+                console.error("Failed to force-save profile:", profileErr);
             }
 
-            // --- STEP 4: OPTIMISTIC LOGIN ---
             const newUser: User = {
                 id: authData.user.id,
                 username: data.username,
@@ -377,7 +377,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error("Erro ao criar conta no servidor.");
 
     } else {
-        // Local Logic
+        // Local Fallback
         if (users.some(u => u.username.toLowerCase() === data.username.toLowerCase())) throw new Error("Usuário já em uso.");
         const newUser: User = {
             ...data,
@@ -397,7 +397,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    // UI First
     setCurrentUser(null);
     if (isSupabaseConfigured) {
         try { await supabase.auth.signOut(); } catch (e) { }
@@ -408,7 +407,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateUserSubscription = async (userId: string, days: number) => {
       const expiryDate = new Date(Date.now() + (days * 24 * 60 * 60 * 1000)).toISOString();
-      
       if (isSupabaseConfigured) {
           await supabase.from('profiles').update({ subscription_expires_at: expiryDate }).eq('id', userId);
           setUsers(prev => prev.map(u => u.id === userId ? { ...u, subscriptionExpiresAt: expiryDate } : u));
@@ -501,8 +499,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, users, suggestions, login, register, logout, updateUserSubscription, banUser, isPremium, verifyUserForSupport, resetPassword, updateEmail, addSuggestion, refreshUserData, dbError }}>
-      {!loading && children}
+    <AuthContext.Provider value={{ currentUser, users, suggestions, login, register, logout, updateUserSubscription, banUser, isPremium, verifyUserForSupport, resetPassword, updateEmail, addSuggestion, refreshUserData, dbError, isLoading: loading }}>
+      {children}
     </AuthContext.Provider>
   );
 };
