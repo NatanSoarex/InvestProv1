@@ -201,6 +201,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (allTickers.length === 0) return;
       setIsRefreshing(true);
       try {
+          // Use new Mega Update API Logic
           const [newQuotes, newFxRate] = await Promise.all([
               financialApi.getQuotes(allTickers),
               financialApi.getFxRate('USD', 'BRL')
@@ -429,8 +430,12 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                          // Day change for new buy = Current - BuyPrice
                          holdingDayChange += (price - txPrice) * t.quantity;
                      } else {
-                         const prev = Number(quote.previousClose) || price;
-                         holdingDayChange += (price - prev) * t.quantity;
+                         // Math Fallback for day change if API returns 0 change but we have prices
+                         let dailyDiff = quote.change;
+                         if (dailyDiff === 0 && quote.price > 0 && quote.previousClose > 0) {
+                             dailyDiff = quote.price - quote.previousClose;
+                         }
+                         holdingDayChange += dailyDiff * t.quantity;
                      }
                  } catch (e) {}
               });

@@ -2,7 +2,7 @@
 import { Asset, Quote, AssetClass, HistoricalDataPoint, Transaction, MarketState } from '../types';
 
 // ============================================================================
-// PROVEST FINANCIAL ENGINE 7.1 (CHART FALLBACK & ACCURACY)
+// PROVEST FINANCIAL ENGINE 8.0 (MEGA UPDATE - MULTI-SOURCE PRECISION)
 // ============================================================================
 
 // --- Endpoints ---
@@ -15,6 +15,8 @@ const COINBASE_API = 'https://api.coinbase.com/v2';
 const COINGECKO_API = 'https://api.coingecko.com/api/v3';
 const STOOQ_BASE_URL = 'https://stooq.com/q/l';
 const AWESOMEAPI_BASE = 'https://economia.awesomeapi.com.br/json';
+const COINCAP_API = 'https://api.coincap.io/v2/assets';
+const KUCOIN_API = 'https://api.kucoin.com/api/v1/market/stats';
 
 // --- Resilience Proxies ---
 const PROXIES = [
@@ -250,6 +252,19 @@ const getCryptoMapping = (ticker: string) => {
     return { binanceSymbol, coinbasePair, coinId };
 };
 
+// --- Helper: Emergency Math Calculator ---
+const calculateFallbackMetrics = (quote: Quote): Quote => {
+    if ((quote.change === 0 || quote.changePercent === 0) && quote.price > 0 && quote.previousClose > 0) {
+        // Force recalculation if API returns 0 but prices differ
+        const diff = quote.price - quote.previousClose;
+        if (Math.abs(diff) > 0.0000001) {
+            quote.change = diff;
+            quote.changePercent = (diff / quote.previousClose) * 100;
+        }
+    }
+    return quote;
+};
+
 // ============================================================================
 // PROVIDERS
 // ============================================================================
@@ -264,13 +279,57 @@ const providers = {
                 const change = parseFloat(data.priceChange);
                 const prevClose = parseFloat(data.prevClosePrice);
                 
-                return {
+                return calculateFallbackMetrics({
                     price: price || 0,
                     change: change || 0,
                     changePercent: parseFloat(data.priceChangePercent) || 0,
                     previousClose: prevClose || price,
                     marketState: MarketState.OPEN
-                };
+                });
+            }
+        } catch (e) {}
+        return null;
+    },
+    coincap: async (ticker: string): Promise<Quote | null> => {
+        const { coinId } = getCryptoMapping(ticker);
+        try {
+            const data = await smartFetch(`${COINCAP_API}/${coinId}`, false, 2000);
+            if (data?.data) {
+                const price = parseFloat(data.data.priceUsd);
+                const changePercent = parseFloat(data.data.changePercent24Hr);
+                // Reverse engineer prev close
+                const prevClose = price / (1 + (changePercent / 100));
+                const change = price - prevClose;
+                
+                return calculateFallbackMetrics({
+                    price,
+                    change,
+                    changePercent,
+                    previousClose: prevClose,
+                    marketState: MarketState.OPEN
+                });
+            }
+        } catch (e) {}
+        return null;
+    },
+    kucoin: async (ticker: string): Promise<Quote | null> => {
+        const { binanceSymbol } = getCryptoMapping(ticker);
+        const symbol = binanceSymbol.replace('USDT', '-USDT').replace('USDC', '-USDC');
+        try {
+            const data = await smartFetch(`${KUCOIN_API}?symbol=${symbol}`, false, 2000);
+            if (data?.data) {
+                const price = parseFloat(data.data.last);
+                const change = parseFloat(data.data.changePrice);
+                const changePercent = parseFloat(data.data.changeRate) * 100;
+                const prevClose = price - change;
+
+                return calculateFallbackMetrics({
+                    price,
+                    change,
+                    changePercent,
+                    previousClose: prevClose,
+                    marketState: MarketState.OPEN
+                });
             }
         } catch (e) {}
         return null;
@@ -281,6 +340,7 @@ const providers = {
             const data = await smartFetch(`${COINBASE_API}/prices/${coinbasePair}/spot`, false, 2000);
             if (data?.data?.amount) {
                 const price = parseFloat(data.data.amount);
+                // Coinbase spot doesn't give change, assume 0 but try logic
                 return {
                     price: price,
                     change: 0, 
@@ -302,13 +362,13 @@ const providers = {
                 const price = r.usd;
                 const changePerc = r.usd_24h_change;
                 const change = price * (changePerc / 100);
-                return {
+                return calculateFallbackMetrics({
                     price: price || 0,
                     change: change || 0,
                     changePercent: changePerc || 0,
                     previousClose: price - change,
                     marketState: MarketState.OPEN
-                };
+                });
             }
         } catch (e) {}
         return null;
@@ -324,22 +384,13 @@ const providers = {
                 let change = r.regularMarketChange;
                 let changePercent = r.regularMarketChangePercent;
 
-                // Force Math if API returns 0
-                if (price > 0 && prevClose > 0 && (change === 0 || change === null)) {
-                     const diff = price - prevClose;
-                     if (Math.abs(diff) > 0.000001) {
-                         change = diff;
-                         changePercent = (diff / prevClose) * 100;
-                     }
-                }
-
-                return {
+                return calculateFallbackMetrics({
                     price: price,
                     change: change || 0,
                     changePercent: changePercent || 0,
                     previousClose: prevClose,
                     marketState: MarketState.REGULAR
-                };
+                });
             }
         } catch (e) {}
         return null;
@@ -364,22 +415,13 @@ const providers = {
                 let change = q.regularMarketChange;
                 let changePercent = q.regularMarketChangePercent;
 
-                // Aggressive Calculation Check
-                if (finalPrice > 0 && prevClose > 0 && (change === 0 || change === null)) {
-                     const diff = finalPrice - prevClose;
-                     if (Math.abs(diff) > 0.000001) {
-                         change = diff;
-                         changePercent = (diff / prevClose) * 100;
-                     }
-                }
-
-                return {
+                return calculateFallbackMetrics({
                     price: finalPrice,
                     change: change || 0,
                     changePercent: changePercent || 0,
                     previousClose: prevClose,
                     marketState: state
-                };
+                });
             }
         } catch (e) {}
         return null;
@@ -397,13 +439,13 @@ const providers = {
                 const change = price - prevClose;
                 const changePercent = (change / prevClose) * 100;
                 
-                return {
+                return calculateFallbackMetrics({
                     price: price,
                     change: change,
                     changePercent: changePercent,
                     previousClose: prevClose,
                     marketState: MarketState.REGULAR
-                };
+                });
             }
         } catch(e) {}
         return null;
@@ -527,11 +569,25 @@ export const financialApi = {
             let quote: Quote | null = null;
             const { symbol, type } = normalizeTicker(rawTicker);
 
-            // PRIORITY CHAIN
+            // PRIORITY CHAIN - UPDATED FOR MEGA UPDATE
             if (type === 'CRYPTO') {
+                // 1. Binance (Best Live)
                 quote = await providers.binance(symbol);
+                // 2. CoinCap (Best 24h %)
+                if (!quote || quote.changePercent === 0) {
+                    const q2 = await providers.coincap(symbol);
+                    if (q2) quote = q2; 
+                }
+                // 3. KuCoin (Backup)
+                if (!quote || quote.changePercent === 0) {
+                    const q3 = await providers.kucoin(symbol);
+                    if (q3) quote = q3;
+                }
+                // 4. CoinGecko
                 if (!quote) quote = await providers.coingecko(symbol); 
+                // 5. Yahoo
                 if (!quote) quote = await providers.yahoo(`${symbol}-USD`); 
+                // 6. Coinbase (Last resort, often no change %)
                 if (!quote) quote = await providers.coinbase(symbol);
             } else if (type === 'BR') {
                 quote = await providers.brapi(symbol);
@@ -543,7 +599,6 @@ export const financialApi = {
             }
 
             // Ultimate Fallback: Yahoo Chart API if Quote API returns 0 or fails
-            // This ensures graph and portfolio balance are in sync
             if (!quote || quote.price === 0) {
                 const chartQuote = await providers.chartFallback(symbol);
                 if (chartQuote && chartQuote.price > 0) {

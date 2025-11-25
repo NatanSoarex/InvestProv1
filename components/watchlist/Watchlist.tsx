@@ -107,9 +107,14 @@ const WatchlistItem: React.FC<{
 };
 
 const Watchlist: React.FC = () => {
-  const { watchlist, getAssetDetails, getLiveQuote, removeFromWatchlist, t } = usePortfolio();
+  const { watchlist, getAssetDetails, getLiveQuote, removeFromWatchlist, t, refresh } = usePortfolio();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(false); 
+
+  // FIX: Trigger refresh on mount to ensure 0% bug is fixed immediately for user
+  useEffect(() => {
+      refresh();
+  }, []);
 
   useEffect(() => {
     const loadWatchlist = async () => {
