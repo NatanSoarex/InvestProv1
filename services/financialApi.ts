@@ -2,7 +2,7 @@
 import { Asset, Quote, AssetClass, HistoricalDataPoint, Transaction, MarketState } from '../types';
 
 // ============================================================================
-// PROVEST FINANCIAL ENGINE 6.1 (Crash Guard & Math Fixes)
+// PROVEST FINANCIAL ENGINE 7.0 (MEGA UPDATE - ACCURACY & LOGOS)
 // ============================================================================
 
 // --- Endpoints ---
@@ -25,8 +25,8 @@ const PROXIES = [
 
 // --- Cache Configuration ---
 const CACHE_TTL = {
-    QUOTE: 30 * 1000,       
-    HISTORY: 5 * 60 * 1000, 
+    QUOTE: 15 * 1000,       // 15s for quotes (More frequent)
+    HISTORY: 5 * 60 * 1000, // 5m for history
     ASSET: 24 * 60 * 60 * 1000 
 };
 
@@ -36,44 +36,52 @@ const cache = {
     assets: {} as Record<string, Asset>,
 };
 
-// --- STATIC LOGO MAP ---
+// --- MASSIVE LOGO MAP (ICONS FIX) ---
 const LOGO_MAP: Record<string, string> = {
-    // Crypto
+    // Crypto (Top 20)
     'BTC': 'https://assets.coingecko.com/coins/images/1/large/bitcoin.png',
     'ETH': 'https://assets.coingecko.com/coins/images/279/large/ethereum.png',
     'SOL': 'https://assets.coingecko.com/coins/images/4128/large/solana.png',
     'USDT': 'https://assets.coingecko.com/coins/images/325/large/Tether.png',
     'BNB': 'https://assets.coingecko.com/coins/images/825/large/binance-coin-logo.png',
     'XRP': 'https://assets.coingecko.com/coins/images/44/large/xrp-symbol-white-128.png',
+    'USDC': 'https://assets.coingecko.com/coins/images/6319/large/USD_Coin_icon.png',
     'DOGE': 'https://assets.coingecko.com/coins/images/5/large/dogecoin.png',
     'ADA': 'https://assets.coingecko.com/coins/images/975/large/cardano.png',
     'AVAX': 'https://assets.coingecko.com/coins/images/12559/large/Avalanche_Circle_RedWhite_Trans.png',
-    'SHIB': 'https://assets.coingecko.com/coins/images/11939/large/shiba.png',
+    'TRX': 'https://assets.coingecko.com/coins/images/1094/large/tron-logo.png',
+    'LINK': 'https://assets.coingecko.com/coins/images/877/large/chainlink-new-logo.png',
     'DOT': 'https://assets.coingecko.com/coins/images/12171/large/polkadot.png',
     'MATIC': 'https://assets.coingecko.com/coins/images/4713/large/matic-token-icon.png',
     'LTC': 'https://assets.coingecko.com/coins/images/2/large/litecoin.png',
+    'SHIB': 'https://assets.coingecko.com/coins/images/11939/large/shiba.png',
+    'BCH': 'https://assets.coingecko.com/coins/images/780/large/bitcoin-cash-circle.png',
     
-    // Stocks BR
-    'PETR4': 'https://logo.clearbit.com/petrobras.com.br',
-    'VALE3': 'https://logo.clearbit.com/vale.com',
-    'ITUB4': 'https://logo.clearbit.com/itau.com.br',
-    'BBDC4': 'https://logo.clearbit.com/banco.bradesco',
-    'BBAS3': 'https://logo.clearbit.com/bb.com.br',
-    'WEGE3': 'https://logo.clearbit.com/weg.net',
-    'MGLU3': 'https://logo.clearbit.com/magazineluiza.com.br',
-    'NU': 'https://logo.clearbit.com/nubank.com.br',
-    'ELET3': 'https://logo.clearbit.com/eletrobras.com',
+    // Stocks BR (Blue Chips & Populares)
+    'PETR4': 'https://s3-symbol-logo.tradingview.com/petrobras--big.svg',
+    'VALE3': 'https://s3-symbol-logo.tradingview.com/vale--big.svg',
+    'ITUB4': 'https://s3-symbol-logo.tradingview.com/itau-unibanco--big.svg',
+    'BBDC4': 'https://s3-symbol-logo.tradingview.com/bradesco--big.svg',
+    'BBAS3': 'https://s3-symbol-logo.tradingview.com/banco-do-brasil--big.svg',
+    'WEGE3': 'https://s3-symbol-logo.tradingview.com/weg--big.svg',
+    'MGLU3': 'https://s3-symbol-logo.tradingview.com/magaz-luiza--big.svg',
+    'NU': 'https://s3-symbol-logo.tradingview.com/nubank--big.svg',
+    'ELET3': 'https://s3-symbol-logo.tradingview.com/eletrobras--big.svg',
+    'PRIO3': 'https://s3-symbol-logo.tradingview.com/petrorio--big.svg',
+    'ABEV3': 'https://s3-symbol-logo.tradingview.com/ambev--big.svg',
+    'RENT3': 'https://s3-symbol-logo.tradingview.com/localiza--big.svg',
+    'ALOS3': 'https://s3-symbol-logo.tradingview.com/aliansce-sonae--big.svg',
     
-    // FIIs / ETFs BR
-    'MXRF11': 'https://logo.clearbit.com/xpinc.com',
-    'HGLG11': 'https://logo.clearbit.com/credit-suisse.com',
-    'IVVB11': 'https://logo.clearbit.com/blackrock.com',
-    'BOVA11': 'https://logo.clearbit.com/blackrock.com',
-    'SMAL11': 'https://logo.clearbit.com/blackrock.com',
+    // FIIs & ETFs BR
+    'MXRF11': 'https://s3-symbol-logo.tradingview.com/xp-investimentos--big.svg',
+    'HGLG11': 'https://s3-symbol-logo.tradingview.com/credit-suisse--big.svg',
+    'KNCR11': 'https://s3-symbol-logo.tradingview.com/kinea--big.svg',
+    'IVVB11': 'https://s3-symbol-logo.tradingview.com/ishares--big.svg',
+    'BOVA11': 'https://s3-symbol-logo.tradingview.com/ishares--big.svg',
+    'SMAL11': 'https://s3-symbol-logo.tradingview.com/ishares--big.svg',
     'HASH11': 'https://hashdex.com/images/logo-hashdex.svg',
-    'ALOS3': 'https://logo.clearbit.com/allos.co',
 
-    // US Stocks
+    // US Stocks & ETFs (Global)
     'AAPL': 'https://logo.clearbit.com/apple.com',
     'MSFT': 'https://logo.clearbit.com/microsoft.com',
     'GOOG': 'https://logo.clearbit.com/abc.xyz',
@@ -81,12 +89,13 @@ const LOGO_MAP: Record<string, string> = {
     'TSLA': 'https://logo.clearbit.com/tesla.com',
     'NVDA': 'https://logo.clearbit.com/nvidia.com',
     'META': 'https://logo.clearbit.com/meta.com',
-    'NFLX': 'https://logo.clearbit.com/netflix.com',
     'VOO': 'https://logo.clearbit.com/vanguard.com',
     'QQQ': 'https://logo.clearbit.com/invesco.com',
     'SPY': 'https://logo.clearbit.com/ssga.com',
     'VT': 'https://logo.clearbit.com/vanguard.com',
-    'SMH': 'https://logo.clearbit.com/vaneck.com'
+    'SMH': 'https://logo.clearbit.com/vaneck.com',
+    'VGT': 'https://logo.clearbit.com/vanguard.com',
+    'SCHD': 'https://logo.clearbit.com/schwab.com'
 };
 
 // --- Pre-defined Top Assets for Search Optimization ---
@@ -129,7 +138,9 @@ export const TOP_ASSETS_FALLBACK = [
     { t: 'VOO', n: 'Vanguard S&P 500', c: AssetClass.ETF },
     { t: 'QQQ', n: 'Invesco QQQ', c: AssetClass.ETF },
     { t: 'VT', n: 'Vanguard Total World', c: AssetClass.ETF },
-    { t: 'SMH', n: 'VanEck Semiconductor', c: AssetClass.ETF }
+    { t: 'SMH', n: 'VanEck Semiconductor', c: AssetClass.ETF },
+    { t: 'VGT', n: 'Vanguard Info Tech', c: AssetClass.ETF },
+    { t: 'SCHD', n: 'Schwab US Dividend', c: AssetClass.ETF }
 ];
 
 // --- Helper: Robust Fetcher ---
@@ -199,9 +210,12 @@ const parseStooqCsv = (csvText: string): Quote | null => {
 const resolveLogo = (ticker: string, name: string): string => {
     const t = ticker.toUpperCase().replace('.SA', '').replace('-USD', '').trim();
     if (LOGO_MAP[t]) return LOGO_MAP[t];
+    
+    // Heuristic fallback
     let domain = '';
     if (ticker.includes('.SA')) domain = `${t.toLowerCase()}.com.br`;
     else domain = `${t.toLowerCase()}.com`;
+    
     return `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
 };
 
@@ -210,10 +224,15 @@ const normalizeTicker = (ticker: string) => {
     const t = ticker.toUpperCase().trim();
     const cryptoMatch = TOP_ASSETS_FALLBACK.find(a => a.t === t && a.c === AssetClass.CRYPTO);
     if (cryptoMatch) return { symbol: t, type: 'CRYPTO' };
+    
+    // Detect common crypto formats
+    if (['BTC','ETH','SOL','BNB','XRP','USDT','USDC','DOGE','ADA','AVAX'].includes(t)) return { symbol: t, type: 'CRYPTO' };
     if (t.endsWith('-USD')) return { symbol: t.replace('-USD', ''), type: 'CRYPTO' };
+    
     const brRegex = /^[A-Z]{4}(3|4|5|6|11)$/;
     if (t.endsWith('.SA')) return { symbol: t, type: 'BR' };
     if (brRegex.test(t)) return { symbol: `${t}.SA`, type: 'BR' };
+    
     return { symbol: t, type: 'GLOBAL' };
 };
 
@@ -224,7 +243,8 @@ const getCryptoMapping = (ticker: string) => {
     const coinbasePair = `${t}-USD`;
     const idMap: Record<string, string> = {
         'BTC': 'bitcoin', 'ETH': 'ethereum', 'SOL': 'solana', 'BNB': 'binancecoin',
-        'XRP': 'ripple', 'ADA': 'cardano', 'DOGE': 'dogecoin'
+        'XRP': 'ripple', 'ADA': 'cardano', 'DOGE': 'dogecoin', 'AVAX': 'avalanche-2',
+        'DOT': 'polkadot', 'MATIC': 'matic-network', 'LTC': 'litecoin', 'SHIB': 'shiba-inu'
     };
     const coinId = idMap[t] || t.toLowerCase();
     return { binanceSymbol, coinbasePair, coinId };
@@ -265,7 +285,7 @@ const providers = {
                     price: price,
                     change: 0, 
                     changePercent: 0,
-                    previousClose: price, // Often lacks history, causes 0% bug. Handled in Fallback.
+                    previousClose: price, 
                     marketState: MarketState.OPEN
                 };
             }
@@ -301,10 +321,10 @@ const providers = {
                 const price = r.regularMarketPrice || 0;
                 const prevClose = r.regularMarketPreviousClose || price;
                 
-                // Aggressive Calculation
                 let change = r.regularMarketChange;
                 let changePercent = r.regularMarketChangePercent;
 
+                // Force Math if API returns 0
                 if (price > 0 && prevClose > 0 && (change === 0 || change === null)) {
                      const diff = price - prevClose;
                      if (Math.abs(diff) > 0.000001) {
@@ -386,6 +406,7 @@ export const financialApi = {
         if (query.length < 2) return [];
         const qLower = query.toLowerCase();
         
+        // 1. Local Matches (Instant)
         const localResults = TOP_ASSETS_FALLBACK.filter(i => 
             i.t.toLowerCase().includes(qLower) || 
             i.n.toLowerCase().includes(qLower)
@@ -401,8 +422,9 @@ export const financialApi = {
             };
         });
 
-        if (localResults.length >= 10) return localResults.slice(0, 15);
+        if (localResults.length >= 5) return localResults.slice(0, 10);
 
+        // 2. Remote Search
         try {
             const url = `${YAHOO_SEARCH_URL}?q=${query}&quotesCount=10&newsCount=0`;
             const data = await smartFetch(url, true, 2000); 
@@ -425,6 +447,7 @@ export const financialApi = {
                     };
                 });
 
+            // Merge and Deduplicate
             const map = new Map();
             localResults.forEach(item => map.set(item.ticker, item));
             yahooMatches.forEach((item: Asset) => {
@@ -480,6 +503,7 @@ export const financialApi = {
             let quote: Quote | null = null;
             const { symbol, type } = normalizeTicker(rawTicker);
 
+            // PRIORITY CHAIN
             if (type === 'CRYPTO') {
                 quote = await providers.binance(symbol);
                 if (!quote) quote = await providers.coingecko(symbol); 
@@ -489,10 +513,12 @@ export const financialApi = {
                 quote = await providers.brapi(symbol);
                 if (!quote) quote = await providers.yahoo(symbol);
             } else {
+                // USA / GLOBAL
                 quote = await providers.yahoo(symbol);
                 if (!quote) quote = await providers.stooq(symbol);
             }
 
+            // Ultimate Fallback
             if (!quote) quote = await providers.yahoo(symbol);
 
             if (quote) {
@@ -523,25 +549,36 @@ export const financialApi = {
 
     getHistoricalPriceAtTime: async (ticker: string, dateTime: string): Promise<{price: number} | null> => {
         const { symbol, type } = normalizeTicker(ticker);
-        const isToday = new Date(dateTime).toDateString() === new Date().toDateString();
-
-        if (isToday) {
-            const q = await financialApi.getQuotes([symbol]);
-            if (q[symbol]) return { price: q[symbol].price };
-        }
-
+        
+        // Use +/- 24h window to find closing price around that time
         const ts = Math.floor(new Date(dateTime).getTime() / 1000);
-        const p1 = ts - 86400;
+        const p1 = ts - 86400; 
         const p2 = ts + 86400;
         
         try {
-            const url = `${YAHOO_CHART_API}/${type === 'CRYPTO' ? symbol + '-USD' : symbol}?period1=${p1}&period2=${p2}&interval=5m`;
+            const url = `${YAHOO_CHART_API}/${type === 'CRYPTO' ? symbol + '-USD' : symbol}?period1=${p1}&period2=${p2}&interval=60m`;
             const data = await smartFetch(url, true);
             const result = data?.chart?.result?.[0];
             
-            if (result?.indicators?.quote?.[0]?.close) {
-                const prices = result.indicators.quote[0].close.filter((p:number) => p !== null);
-                if (prices.length > 0) return { price: prices[prices.length - 1] };
+            if (result?.timestamp && result?.indicators?.quote?.[0]?.close) {
+                // Find the closest candle to the target timestamp
+                const timestamps = result.timestamp;
+                const prices = result.indicators.quote[0].close;
+                
+                let closestIdx = 0;
+                let minDiff = Infinity;
+                
+                for(let i=0; i<timestamps.length; i++) {
+                    const diff = Math.abs(timestamps[i] - ts);
+                    if(diff < minDiff && prices[i] !== null) {
+                        minDiff = diff;
+                        closestIdx = i;
+                    }
+                }
+                
+                if(prices[closestIdx]) {
+                    return { price: prices[closestIdx] };
+                }
             }
         } catch (e) {}
         
@@ -556,7 +593,7 @@ export const financialApi = {
     ): Promise<HistoricalDataPoint[]> => {
         if (transactions.length === 0) return [];
 
-        // 1. Determine Time Range
+        // 1. Define Time Range
         const now = new Date();
         let startTime = new Date();
         let interval = '1d';
@@ -584,6 +621,7 @@ export const financialApi = {
         const period1 = Math.floor(startTime.getTime() / 1000);
         const period2 = Math.floor(now.getTime() / 1000);
 
+        // 2. Fetch History for ALL assets
         const uniqueTickers = Array.from(new Set(transactions.map(t => t.ticker)));
         const assetHistoryMap: Record<string, { timestamp: number[], close: number[] }> = {};
 
@@ -601,64 +639,70 @@ export const financialApi = {
                         timestamp: result.timestamp,
                         close: result.indicators.quote[0].close
                     };
-                } else if (currentQuotes && currentQuotes[ticker]) {
-                    const currentPrice = currentQuotes[ticker].price;
-                    assetHistoryMap[ticker] = {
-                        timestamp: [period1, period2],
-                        close: [currentPrice, currentPrice]
-                    };
                 }
-            } catch (e) {
-                if (currentQuotes && currentQuotes[ticker]) {
-                    const currentPrice = currentQuotes[ticker].price;
-                    assetHistoryMap[ticker] = {
-                        timestamp: [period1, period2],
-                        close: [currentPrice, currentPrice]
-                    };
-                }
-            }
+            } catch (e) {}
         }));
 
+        // 3. Build Master Timeline (Union of all timestamps)
         let allTimestamps: number[] = [];
         Object.values(assetHistoryMap).forEach(h => allTimestamps.push(...h.timestamp));
         allTimestamps = Array.from(new Set(allTimestamps)).sort((a, b) => a - b);
 
+        // Fallback if API fails
         if (allTimestamps.length === 0) {
             allTimestamps = [period1, period2];
         }
 
-        const currentHoldings: Record<string, number> = {};
-        transactions.forEach(t => {
-            currentHoldings[t.ticker] = (currentHoldings[t.ticker] || 0) + t.quantity;
-        });
-
-        let totalInvestedCurrent = 0;
-        transactions.forEach(t => totalInvestedCurrent += t.totalCost); 
-
+        // 4. Calculate Portfolio Value at each Point (TRUE TIME TRAVEL)
         const resultData: HistoricalDataPoint[] = [];
         const lastKnownPrices: Record<string, number> = {};
 
+        // Pre-sort transactions by date
+        const sortedTx = [...transactions].sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
+
         allTimestamps.forEach(ts => {
+            const currentDate = new Date(ts * 1000);
+            
+            // A. Calculate Invested Amount & Active Holdings at this timestamp
+            let investedInUSD = 0;
+            const currentHoldings: Record<string, number> = {};
+
+            for (const t of sortedTx) {
+                const txDate = new Date(t.dateTime);
+                if (txDate.getTime() <= currentDate.getTime()) {
+                    // Transaction happened BEFORE this point in graph
+                    currentHoldings[t.ticker] = (currentHoldings[t.ticker] || 0) + t.quantity;
+                    
+                    const { type } = normalizeTicker(t.ticker);
+                    let cost = t.totalCost;
+                    if (type === 'BR' && fxRate > 0) cost = cost / fxRate;
+                    investedInUSD += cost;
+                }
+            }
+
+            // B. Calculate Market Value
             let portfolioValue = 0;
-            let investedValue = 0;
 
             Object.keys(currentHoldings).forEach(ticker => {
                 const history = assetHistoryMap[ticker];
                 let price = 0;
 
                 if (history) {
+                    // Find closest price in history
+                    // Binary search or simple find for now (optimization: maintain index)
                     const idx = history.timestamp.findIndex(t => t >= ts);
                     
-                    if (idx !== -1 && Math.abs(history.timestamp[idx] - ts) < 3600) {
+                    if (idx !== -1 && Math.abs(history.timestamp[idx] - ts) < 7200) { // 2h window
                          price = history.close[idx];
                          if (price) lastKnownPrices[ticker] = price;
                     } else if (lastKnownPrices[ticker]) {
-                        price = lastKnownPrices[ticker]; 
+                        price = lastKnownPrices[ticker]; // Forward fill
                     } else if (history.close.length > 0) {
-                        price = history.close[0]; 
+                        price = history.close[0]; // Initial fill
                     }
                 }
                 
+                // Fallback to current live quote if history ends or fails
                 if (!price && currentQuotes && currentQuotes[ticker]) {
                     price = currentQuotes[ticker].price;
                 }
@@ -674,21 +718,21 @@ export const financialApi = {
                 }
             });
 
-            let investedInUSD = 0;
-            transactions.forEach(t => {
-                 const { type } = normalizeTicker(t.ticker);
-                 let cost = t.totalCost;
-                 if (type === 'BR' && fxRate > 0) cost = cost / fxRate;
-                 investedInUSD += cost;
-            });
-
-            if (portfolioValue > 0) {
+            // Only push point if we had investment OR value
+            if (investedInUSD > 0 || portfolioValue > 0) {
                 resultData.push({
-                    date: new Date(ts * 1000).toISOString(),
+                    date: currentDate.toISOString(),
                     price: portfolioValue,
                     invested: investedInUSD
                 });
             }
+        });
+
+        // Stitch Last Point (Live)
+        resultData.push({
+            date: new Date().toISOString(),
+            price: resultData.length > 0 ? resultData[resultData.length-1].price : 0, // Will be updated by dashboard
+            invested: resultData.length > 0 ? resultData[resultData.length-1].invested : 0
         });
 
         return resultData;

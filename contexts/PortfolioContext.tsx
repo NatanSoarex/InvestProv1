@@ -93,7 +93,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Settings with Validation Guard
   const [settings, setSettings] = useLocalStorage<AppSettings>('appSettings', { currency: 'BRL', language: 'pt-BR' });
   
-  // Settings Guard: Ensure valid values on load to prevent crash
+  // Settings Guard
   useEffect(() => {
       if (settings.currency !== 'BRL' && settings.currency !== 'USD') {
           setSettings(prev => ({ ...prev, currency: 'BRL' }));
@@ -117,7 +117,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const loadData = async () => {
           if (isSupabaseConfigured && currentUser) {
               try {
-                  // Fetch Transactions with Retry
                   await retryFetch(async () => {
                       const { data: txData, error: txError } = await supabase
                           .from('transactions')
@@ -139,7 +138,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                       }
                   });
 
-                  // Fetch Watchlist with Retry
                   await retryFetch(async () => {
                       const { data: wlData, error: wlError } = await supabase
                           .from('watchlist')
@@ -155,10 +153,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
               } catch (err) {
                   console.error("Erro crítico ao carregar dados da nuvem:", err);
-                  // Fallback to empty or local state if needed, but prevent crash
               }
           } else {
-              // Modo Local
               setTransactions(localTransactions);
               setWatchlist(localWatchlist);
           }
@@ -243,7 +239,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
 
     if (isSupabaseConfigured && currentUser) {
-        // OPTIMISTIC UPDATE
         const tempId = 'temp_' + Date.now();
         const optimisticTx: Transaction = {
             ...transaction,
@@ -254,7 +249,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setTransactions(prev => [...prev, optimisticTx].sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime()));
 
         try {
-            // DATABASE INSERT
             const { data, error } = await supabase.from('transactions').insert({
                 user_id: currentUser.id,
                 ticker: cleanTicker,
@@ -272,7 +266,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         } catch(e) {
             console.error("CRITICAL ERROR: Failed to save transaction to DB", e);
             setTransactions(prev => prev.filter(t => t.id !== tempId));
-            // alert("Erro ao salvar transação na nuvem. Verifique sua conexão.");
         }
 
     } else {
@@ -287,13 +280,11 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [isPremiumUser, validTickers, uniqueAssets, currentUser, setLocalTransactions]);
 
   const importTransactions = useCallback(async (newTransactions: Omit<Transaction, 'id'>[]) => {
-      // Stub to satisfy interface - functionality removed from UI
       console.log("Import functionality is currently disabled via UI");
   }, []);
 
   const removeTransaction = useCallback(async (id: string) => {
     setTransactions(prev => prev.filter(t => t.id !== id));
-    
     if (isSupabaseConfigured) {
         await supabase.from('transactions').delete().eq('id', id);
     } else {
@@ -304,7 +295,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const removeHolding = useCallback(async (ticker: string) => {
     const target = ticker.toUpperCase().trim();
     setTransactions(prev => prev.filter(t => t.ticker !== target));
-
     if (isSupabaseConfigured) {
         await supabase.from('transactions').delete().eq('ticker', target).eq('user_id', currentUser?.id);
     } else {
@@ -315,7 +305,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const addToWatchlist = useCallback(async (ticker: string) => {
     const target = ticker.toUpperCase().trim();
     setWatchlist(prev => Array.from(new Set([...prev, target])));
-
     if (isSupabaseConfigured && currentUser) {
         try {
             await supabase.from('watchlist').insert({ user_id: currentUser.id, ticker: target });
@@ -330,7 +319,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const removeFromWatchlist = useCallback(async (ticker: string) => {
     const target = ticker.toUpperCase().trim();
     setWatchlist(prev => prev.filter(t => t !== target));
-
     if (isSupabaseConfigured && currentUser) {
         await supabase.from('watchlist').delete().eq('ticker', target).eq('user_id', currentUser.id);
     } else {
@@ -358,13 +346,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           if (valueInUSD === undefined || valueInUSD === null || isNaN(valueInUSD)) return 'R$ 0,00';
           const isBRL = settings.currency === 'BRL';
           const finalValue = isBRL ? valueInUSD * fxRate : valueInUSD;
-          
-          // Double safety check
           if (isNaN(finalValue)) return 'R$ 0,00';
-
           return new Intl.NumberFormat(settings.language, { style: 'currency', currency: settings.currency }).format(finalValue);
       } catch (e) {
-          // Fallback safe formatter if Intl fails
           return settings.currency === 'BRL' ? `R$ ${Number(valueInUSD || 0).toFixed(2)}` : `$ ${Number(valueInUSD || 0).toFixed(2)}`;
       }
   }, [settings.currency, settings.language, fxRate]);
@@ -373,62 +357,59 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return translations[settings.language][key] || key;
   }, [settings.language]);
 
-  // --- CALCULATION LOGIC (CRASH GUARD) ---
+  // --- CALCULATION LOGIC (CORE FIX) ---
   const { holdings, totalValue, totalInvested, totalGainLoss, totalGainLossPercent, dayChange, dayChangePercent } = useMemo(() => {
     try {
         const holdingsMap: any = {};
         
-        // Safety Loop for transactions
         for (const t of transactions) {
-          if (!t || !t.ticker) continue; // Skip invalid transactions
-          
+          if (!t || !t.ticker) continue; 
           if (!holdingsMap[t.ticker]) {
             holdingsMap[t.ticker] = { ticker: t.ticker, totalQuantity: 0, totalInvested: 0, transactions: [] };
           }
           const holding = holdingsMap[t.ticker];
-          
-          // Force number type
           const cost = Number(t.totalCost);
           const qty = Number(t.quantity);
-          
           if (!isNaN(cost)) holding.totalInvested += cost;
           if (!isNaN(qty)) holding.totalQuantity += qty;
-          
           holding.transactions.push(t);
         }
         
         const holdingsList = Object.values(holdingsMap).map((h: any) => {
-          // FIX: Fallback Asset generation if details aren't loaded yet
           let asset = assets[h.ticker];
           
           if (!asset) {
-              // Create a temporary placeholder so the portfolio doesn't disappear (ZERO BALANCE FIX)
               asset = {
                   ticker: h.ticker,
-                  name: h.ticker, // Placeholder name
+                  name: h.ticker,
                   logo: '',
-                  country: 'USA', // Default to avoid currency crash
+                  country: 'USA', 
                   assetClass: 'Stock',
                   sector: '', industry: '', marketCap: 0, peRatio: 0, pbRatio: 0, dividendYield: 0, beta: 0, volume: 0
               } as Asset;
           }
 
           const quote = quotes[h.ticker];
-
-          // Calculations with NaN checks
           h.averagePrice = h.totalQuantity > 0 ? h.totalInvested / h.totalQuantity : 0;
           
-          const quotePrice = quote ? Number(quote.price) : 0;
+          // LOGIC FIX: "Frozen" Portfolio & Negative Balance
+          // Priority: 1. Live Price -> 2. Prev Close -> 3. Cost Basis (Last Resort)
+          let finalPrice = 0;
           
-          // FIX: ZERO PRICE GUARD
-          // Se o preço for 0 (erro de API/Loading), assume que vale o que foi pago (0% variação)
-          // em vez de assumir que vale 0 (perda total).
-          if (!isNaN(quotePrice) && quotePrice > 0) {
-              h.currentValue = quotePrice * h.totalQuantity;
+          if (quote && Number(quote.price) > 0) {
+              finalPrice = Number(quote.price);
+          } else if (quote && Number(quote.previousClose) > 0) {
+              finalPrice = Number(quote.previousClose); 
+          }
+
+          // If price found, calculate value. If not, assume break-even (safe)
+          if (finalPrice > 0) {
+              h.currentValue = finalPrice * h.totalQuantity;
           } else {
-              h.currentValue = h.totalInvested; // Assume breakeven while loading
+              h.currentValue = h.totalInvested; 
           }
           
+          // Pure Math: Current - Invested = Gain/Loss (Can be negative)
           h.totalGainLoss = h.currentValue - h.totalInvested;
           h.totalGainLossPercent = h.totalInvested > 0 ? (h.totalGainLoss / h.totalInvested) * 100 : 0;
           
@@ -445,14 +426,13 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                      
                      if (isToday) {
                          const txPrice = Number(t.price) || 0;
+                         // Day change for new buy = Current - BuyPrice
                          holdingDayChange += (price - txPrice) * t.quantity;
                      } else {
                          const prev = Number(quote.previousClose) || price;
                          holdingDayChange += (price - prev) * t.quantity;
                      }
-                 } catch (e) {
-                     // skip corrupted transaction calculation
-                 }
+                 } catch (e) {}
               });
           }
           
@@ -460,6 +440,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           const rateToUSD = isBRLAsset && fxRate > 0 ? (1/fxRate) : 1;
           holdingDayChangeUSD = holdingDayChange * rateToUSD;
 
+          // Calculate denominator for day percent correctly
           const denominator = h.currentValue - holdingDayChange;
           const dayPercent = denominator > 0 ? (holdingDayChange / denominator) * 100 : 0;
 
@@ -517,7 +498,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         };
     } catch (error) {
         console.error("PORTFOLIO CRASH GUARD ACTIVATED:", error);
-        // Return safe default state to prevent blue screen
         return {
             holdings: [],
             totalValue: 0,
