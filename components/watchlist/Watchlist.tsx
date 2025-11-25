@@ -27,8 +27,8 @@ const WatchlistItem: React.FC<{
   const changeValue = quote?.change ?? 0;
   const price = quote?.price ?? 0;
   
-  const isPositive = changeValue > 0; // Strict check to catch micro variations
-  const isNegative = changeValue < 0;
+  const isPositive = changeValue > 0.0001; 
+  const isNegative = changeValue < -0.0001;
   const isZero = !isPositive && !isNegative;
   
   const timeLabel = asset.assetClass === 'Crypto' ? '24h' : 'Hoje';
@@ -138,8 +138,14 @@ const Watchlist: React.FC = () => {
           </h1>
           <p className="text-brand-secondary mt-2 text-lg font-light max-w-2xl">{t('watchlistSubtitle')}</p>
         </div>
-        <div className="text-right hidden md:block">
-            <p className="text-xs font-bold text-brand-secondary uppercase tracking-widest mb-1">Total Monitorado</p>
+        <div className="text-right flex flex-col items-end gap-2 hidden md:flex">
+            <div className="flex items-center px-2.5 py-1 rounded-full bg-brand-success/10 border border-brand-success/20 text-brand-success">
+                <span className="relative flex h-2 w-2 mr-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-success opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-success"></span>
+                </span>
+                <span className="text-[10px] font-bold uppercase tracking-wider">Ao Vivo (30s)</span>
+            </div>
             <p className="text-2xl font-bold text-brand-primary">{assets.length} <span className="text-sm font-normal text-brand-secondary">ativos</span></p>
         </div>
       </div>

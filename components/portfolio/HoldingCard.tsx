@@ -45,17 +45,20 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
       ? ((holding.totalInvestedUSD || 0) / holding.totalQuantity) * conversionRate 
       : 0;
 
-  const isDayChangePositive = (displayDayChange ?? 0) >= 0;
-  const isTotalReturnPositive = (displayTotalGainLoss ?? 0) >= 0;
+  // Neutral Logic
+  const isDayChangePositive = (displayDayChange ?? 0) > 0.001;
+  const isDayChangeNegative = (displayDayChange ?? 0) < -0.001;
+  
+  const isTotalReturnPositive = (displayTotalGainLoss ?? 0) > 0.001;
+  const isTotalReturnNegative = (displayTotalGainLoss ?? 0) < -0.001;
   
   // New Logic: Calculate per-share gain/loss
   const currentQuotePrice = quote ? Number(quote.price) : 0;
-  const currentQuotePriceConverted = currentQuotePrice * conversionRate; // If quote is USD/Native, we need normalized
-  // Actually, quote.price is native. We should use normalized values.
-  // Best approach: Compare Display Average vs Display Current (derived from total)
   const displayCurrentPricePerShare = (holding.totalQuantity > 0) ? displayCurrentValue / holding.totalQuantity : 0;
   const gainPerShare = displayCurrentPricePerShare - displayAveragePrice;
-  const isGainPerSharePositive = gainPerShare >= 0;
+  
+  const isGainPerSharePositive = gainPerShare > 0.001;
+  const isGainPerShareNegative = gainPerShare < -0.001;
 
   const handleRemove = (e: React.MouseEvent) => {
       e.preventDefault(); 
@@ -102,7 +105,7 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
             {/* Wallet Impact (Total Return) */}
             <div>
                 <p className="text-brand-secondary text-xs uppercase font-bold tracking-wider mb-1">{t('totalReturn')} (Carteira)</p>
-                <div className={`font-medium text-base ${isTotalReturnPositive ? 'text-brand-success' : 'text-brand-danger'}`}>
+                <div className={`font-medium text-base ${isTotalReturnPositive ? 'text-brand-success' : isTotalReturnNegative ? 'text-brand-danger' : 'text-brand-text'}`}>
                     <span>{formatCurrency(displayTotalGainLoss, currencySymbol)}</span>
                     <span className="ml-1 text-xs opacity-80">({formatPercent(safeTotalGainLossPercent)})</span>
                 </div>
@@ -111,7 +114,7 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
             {/* Market Impact (Price Change) */}
             <div>
                 <p className="text-brand-secondary text-xs uppercase font-bold tracking-wider mb-1">{t('dayChange')}</p>
-                <div className={`font-medium text-base ${isDayChangePositive ? 'text-brand-success' : 'text-brand-danger'}`}>
+                <div className={`font-medium text-base ${isDayChangePositive ? 'text-brand-success' : isDayChangeNegative ? 'text-brand-danger' : 'text-brand-text'}`}>
                     {quote ? (
                         <>
                             <span>{isDayChangePositive ? '+' : ''}{formatCurrency(displayDayChange, currencySymbol)}</span>
@@ -141,7 +144,7 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
             
             <div className="border-t border-brand-border/30 pt-2 mt-1 flex justify-between items-center">
                 <span className="text-xs text-brand-secondary font-medium">Diferença por Cota</span>
-                <span className={`text-xs font-bold font-mono ${isGainPerSharePositive ? 'text-brand-success' : 'text-brand-danger'}`}>
+                <span className={`text-xs font-bold font-mono ${isGainPerSharePositive ? 'text-brand-success' : isGainPerShareNegative ? 'text-brand-danger' : 'text-brand-text'}`}>
                     {gainPerShare > 0 ? '+' : ''}{formatCurrency(gainPerShare, currencySymbol)}
                 </span>
             </div>

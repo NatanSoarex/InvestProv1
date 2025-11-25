@@ -62,7 +62,11 @@ const HoldingRow: React.FC<HoldingRowProps> = ({ holding, onShowHistory, onRemov
   // Total Return Calculations
   const totalReturn = (holding.totalGainLossUSD || 0) * conversionRate;
   const totalReturnPercent = holding.totalGainLossPercent || 0;
-  const isReturnPositive = totalReturn >= 0;
+  
+  // Neutral Color Logic
+  const isReturnPositive = totalReturn > 0;
+  const isReturnNegative = totalReturn < 0;
+  const isReturnNeutral = !isReturnPositive && !isReturnNegative;
 
   const handleRemove = (e: React.MouseEvent) => {
       e.preventDefault();
@@ -103,6 +107,10 @@ const HoldingRow: React.FC<HoldingRowProps> = ({ holding, onShowHistory, onRemov
   const changeUSD = holding.dayChangeUSD ?? 0;
   const change = changeUSD * conversionRate;
   const changePercent = holding.dayChangePercent ?? 0;
+  
+  // Neutral Color Logic for Daily Change
+  const isChangePositive = change > 0.001;
+  const isChangeNegative = change < -0.001;
 
   return (
     <tr className="border-b border-brand-border hover:bg-brand-surface/50 transition-colors group">
@@ -135,8 +143,8 @@ const HoldingRow: React.FC<HoldingRowProps> = ({ holding, onShowHistory, onRemov
                 )}
                 <p className="font-medium text-brand-text">{formatCurrency(displayPrice, currencySymbol)}</p>
             </div>
-            <p className={`text-xs ${change >= 0 ? 'text-brand-success' : 'text-brand-danger'}`}>
-              {change >= 0 ? '+' : ''}{(change || 0).toFixed(2)} ({(changePercent || 0).toFixed(2)}%)
+            <p className={`text-xs ${isChangePositive ? 'text-brand-success' : isChangeNegative ? 'text-brand-danger' : 'text-brand-secondary'}`}>
+              {isChangePositive ? '+' : ''}{(change || 0).toFixed(2)} ({(changePercent || 0).toFixed(2)}%)
             </p>
           </div>
         ) : (
@@ -153,10 +161,10 @@ const HoldingRow: React.FC<HoldingRowProps> = ({ holding, onShowHistory, onRemov
       </td>
       {/* NEW COLUMN: TOTAL RETURN */}
       <td className="p-4 text-right">
-        <p className={`font-medium ${isReturnPositive ? 'text-brand-success' : 'text-brand-danger'}`}>
+        <p className={`font-medium ${isReturnPositive ? 'text-brand-success' : isReturnNegative ? 'text-brand-danger' : 'text-brand-text'}`}>
             {isReturnPositive ? '+' : ''}{formatCurrency(totalReturn, currencySymbol)}
         </p>
-        <p className={`text-xs ${isReturnPositive ? 'text-brand-success' : 'text-brand-danger'} opacity-80`}>
+        <p className={`text-xs ${isReturnPositive ? 'text-brand-success' : isReturnNegative ? 'text-brand-danger' : 'text-brand-secondary'} opacity-80`}>
             ({formatPercent(totalReturnPercent)})
         </p>
       </td>
