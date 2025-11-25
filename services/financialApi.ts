@@ -2,7 +2,7 @@
 import { Asset, Quote, AssetClass, HistoricalDataPoint, Transaction, MarketState } from '../types';
 
 // ============================================================================
-// PROVEST FINANCIAL ENGINE 7.0 (MEGA UPDATE - ACCURACY & LOGOS)
+// PROVEST FINANCIAL ENGINE 7.1 (CHART FALLBACK & ACCURACY)
 // ============================================================================
 
 // --- Endpoints ---
@@ -384,6 +384,30 @@ const providers = {
         } catch (e) {}
         return null;
     },
+    chartFallback: async (ticker: string): Promise<Quote | null> => {
+        // LAST RESORT: Get price from Chart API if Quote API fails
+        try {
+            const url = `${YAHOO_CHART_API}/${ticker}?interval=1d&range=1d`;
+            const data = await smartFetch(url, true, 4000);
+            const result = data?.chart?.result?.[0];
+            
+            if (result?.meta?.regularMarketPrice) {
+                const price = result.meta.regularMarketPrice;
+                const prevClose = result.meta.previousClose || price;
+                const change = price - prevClose;
+                const changePercent = (change / prevClose) * 100;
+                
+                return {
+                    price: price,
+                    change: change,
+                    changePercent: changePercent,
+                    previousClose: prevClose,
+                    marketState: MarketState.REGULAR
+                };
+            }
+        } catch(e) {}
+        return null;
+    },
     stooq: async (ticker: string): Promise<Quote | null> => {
         try {
             const url = `${STOOQ_BASE_URL}/?s=${ticker.toLowerCase()}&f=sd2t2ohlcv&h&e=csv`;
@@ -518,8 +542,14 @@ export const financialApi = {
                 if (!quote) quote = await providers.stooq(symbol);
             }
 
-            // Ultimate Fallback
-            if (!quote) quote = await providers.yahoo(symbol);
+            // Ultimate Fallback: Yahoo Chart API if Quote API returns 0 or fails
+            // This ensures graph and portfolio balance are in sync
+            if (!quote || quote.price === 0) {
+                const chartQuote = await providers.chartFallback(symbol);
+                if (chartQuote && chartQuote.price > 0) {
+                    quote = chartQuote;
+                }
+            }
 
             if (quote) {
                 // SANITIZE OUTPUT TO PREVENT CRASH

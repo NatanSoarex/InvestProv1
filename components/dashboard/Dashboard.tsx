@@ -14,10 +14,11 @@ const SummaryCard: React.FC<{ title: string; value: string; change?: number; cha
   const safeChangePercent = changePercent ?? 0;
   const hasChange = change !== undefined && changePercent !== undefined;
   const isPositive = hasChange && safeChange >= 0;
+  const isNeutral = hasChange && Math.abs(safeChange) < 0.01;
 
   return (
     <Card className="relative overflow-hidden">
-      {hasChange && (
+      {hasChange && !isNeutral && (
         <div className={`absolute top-0 left-0 w-1 h-full ${isPositive ? 'bg-brand-success' : 'bg-brand-danger'} opacity-50`}></div>
       )}
       <CardContent>
@@ -25,8 +26,11 @@ const SummaryCard: React.FC<{ title: string; value: string; change?: number; cha
         <p className="text-2xl md:text-3xl font-bold text-brand-text tracking-tight">{value}</p>
         {hasChange && (
           <div className="flex items-center mt-3">
-             <span className={`flex items-center text-sm font-bold px-2 py-0.5 rounded ${isPositive ? 'text-brand-success bg-brand-success/10' : 'text-brand-danger bg-brand-danger/10'}`}>
-                {isPositive ? '▲' : '▼'} {displayChange} ({Math.abs(safeChangePercent).toFixed(2)}%)
+             <span className={`flex items-center text-sm font-bold px-2 py-0.5 rounded ${
+                 isNeutral ? 'text-brand-secondary bg-brand-secondary/10' :
+                 isPositive ? 'text-brand-success bg-brand-success/10' : 'text-brand-danger bg-brand-danger/10'
+             }`}>
+                {!isNeutral && (isPositive ? '▲' : '▼')} {displayChange} ({Math.abs(safeChangePercent).toFixed(2)}%)
              </span>
           </div>
         )}

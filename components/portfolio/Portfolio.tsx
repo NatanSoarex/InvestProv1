@@ -58,6 +58,11 @@ const HoldingRow: React.FC<HoldingRowProps> = ({ holding, onShowHistory, onRemov
   const displayAveragePrice = (holding.totalQuantity > 0) 
       ? ((holding.totalInvestedUSD || 0) / holding.totalQuantity) * conversionRate 
       : 0;
+  
+  // Total Return Calculations
+  const totalReturn = (holding.totalGainLossUSD || 0) * conversionRate;
+  const totalReturnPercent = holding.totalGainLossPercent || 0;
+  const isReturnPositive = totalReturn >= 0;
 
   const handleRemove = (e: React.MouseEvent) => {
       e.preventDefault();
@@ -77,7 +82,7 @@ const HoldingRow: React.FC<HoldingRowProps> = ({ holding, onShowHistory, onRemov
                         </div>
                    </div>
               </td>
-              <td colSpan={4} className="p-4 text-center relative">
+              <td colSpan={5} className="p-4 text-center relative">
                  <div className="absolute inset-0 flex items-center justify-center z-10">
                     <span className="bg-brand-surface border border-brand-border px-3 py-1 rounded-full text-xs font-bold text-brand-secondary flex items-center gap-2 shadow-lg">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
@@ -145,6 +150,15 @@ const HoldingRow: React.FC<HoldingRowProps> = ({ holding, onShowHistory, onRemov
       <td className="p-4 text-right">
         <p className="font-medium text-brand-text">{formatCurrency(displayCurrentValue, currencySymbol)}</p>
         <p className="text-xs text-brand-secondary">{formatPercent(holding.portfolioPercent || 0)} do portfólio</p>
+      </td>
+      {/* NEW COLUMN: TOTAL RETURN */}
+      <td className="p-4 text-right">
+        <p className={`font-medium ${isReturnPositive ? 'text-brand-success' : 'text-brand-danger'}`}>
+            {isReturnPositive ? '+' : ''}{formatCurrency(totalReturn, currencySymbol)}
+        </p>
+        <p className={`text-xs ${isReturnPositive ? 'text-brand-success' : 'text-brand-danger'} opacity-80`}>
+            ({formatPercent(totalReturnPercent)})
+        </p>
       </td>
       <td className="p-4 text-center">
         <div className="flex items-center justify-center gap-2">
@@ -214,6 +228,7 @@ const Portfolio: React.FC = () => {
               <th className="p-4 font-semibold text-right">{t('price')}</th>
               <th className="p-4 font-semibold text-right">{t('position')}</th>
               <th className="p-4 font-semibold text-right">{t('totalValue')}</th>
+              <th className="p-4 font-semibold text-right">{t('totalReturn')}</th>
               <th className="p-4 font-semibold text-center">{t('actions')}</th>
             </tr>
           </thead>
@@ -222,7 +237,7 @@ const Portfolio: React.FC = () => {
               holdings.map((h) => <HoldingRow key={h.asset.ticker} holding={h} onShowHistory={setHistoryModalHolding} onRemoveHolding={removeHolding} />)
             ) : (
               <tr>
-                <td colSpan={5} className="text-center p-12 text-brand-secondary">
+                <td colSpan={6} className="text-center p-12 text-brand-secondary">
                   <div className="flex flex-col items-center gap-2">
                       <svg className="w-10 h-10 opacity-20" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd"/></svg>
                       <p>{t('emptyPortfolio')}</p>
