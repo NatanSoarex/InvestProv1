@@ -2,7 +2,7 @@
 import { Asset, Quote, AssetClass, HistoricalDataPoint, Transaction, MarketState } from '../types';
 
 // ============================================================================
-// PROVEST FINANCIAL ENGINE 9.0 (MEGA UPDATE - VARIATION HUNTER)
+// PROVEST FINANCIAL ENGINE 9.1 (MEGA UPDATE - DEEP LOOKBACK)
 // ============================================================================
 
 // --- Endpoints ---
@@ -606,6 +606,24 @@ export const financialApi = {
                 const chartQuote = await providers.chartFallback(symbol);
                 if (chartQuote && chartQuote.price > 0) {
                     quote = chartQuote;
+                }
+            }
+
+            // MEGA UPDATE: DEEP LOOKBACK (Fix 0% Bug)
+            // If we still have 0% variation, fetch historical candle manually
+            if (quote && (quote.change === 0 || quote.changePercent === 0) && quote.price > 0) {
+                try {
+                    // Time Travel: Go back exactly 24 hours
+                    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+                    const historical = await financialApi.getHistoricalPriceAtTime(symbol, yesterday);
+                    
+                    if (historical && historical.price > 0) {
+                        quote.previousClose = historical.price;
+                        quote.change = quote.price - historical.price;
+                        quote.changePercent = (quote.change / historical.price) * 100;
+                    }
+                } catch (e) {
+                    console.warn("Deep lookback failed for", symbol);
                 }
             }
 

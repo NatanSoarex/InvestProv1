@@ -27,8 +27,9 @@ const WatchlistItem: React.FC<{
   const changeValue = quote?.change ?? 0;
   const price = quote?.price ?? 0;
   
-  const isPositive = changeValue >= 0;
-  const isZero = changeValue === 0 && changePercent === 0;
+  const isPositive = changeValue > 0; // Strict check to catch micro variations
+  const isNegative = changeValue < 0;
+  const isZero = !isPositive && !isNegative;
   
   const timeLabel = asset.assetClass === 'Crypto' ? '24h' : 'Hoje';
 
