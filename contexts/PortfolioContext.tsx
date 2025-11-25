@@ -419,7 +419,15 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           h.averagePrice = h.totalQuantity > 0 ? h.totalInvested / h.totalQuantity : 0;
           
           const quotePrice = quote ? Number(quote.price) : 0;
-          h.currentValue = !isNaN(quotePrice) ? (quotePrice * h.totalQuantity) : 0;
+          
+          // FIX: ZERO PRICE GUARD
+          // Se o preço for 0 (erro de API/Loading), assume que vale o que foi pago (0% variação)
+          // em vez de assumir que vale 0 (perda total).
+          if (!isNaN(quotePrice) && quotePrice > 0) {
+              h.currentValue = quotePrice * h.totalQuantity;
+          } else {
+              h.currentValue = h.totalInvested; // Assume breakeven while loading
+          }
           
           h.totalGainLoss = h.currentValue - h.totalInvested;
           h.totalGainLossPercent = h.totalInvested > 0 ? (h.totalGainLoss / h.totalInvested) * 100 : 0;
