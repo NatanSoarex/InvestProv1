@@ -72,16 +72,16 @@ const WatchlistItem: React.FC<{
             </button>
         </div>
         
-        <div className="relative z-10 mt-auto">
+        <div className="relative z-10 mt-auto flex flex-col items-start">
              {quote ? (
-                 <div>
+                 <div className="w-full">
                     <div className="flex items-center gap-2 mb-1">
-                        <span className="text-3xl font-black text-brand-text tracking-tighter">
+                        <span className="text-3xl font-black text-brand-text tracking-tighter text-left">
                             {formatUnitPrice(price, currency)}
                         </span>
                         <MarketBadge state={quote.marketState} />
                     </div>
-                    <div className="flex items-center justify-between mt-2">
+                    <div className="flex items-center justify-between mt-2 w-full">
                          <span className={`text-sm font-bold flex items-center gap-1.5 px-2 py-1 rounded-lg ${
                              isZero ? 'bg-brand-secondary/10 text-brand-secondary' :
                              isPositive ? 'bg-[#3FB950]/10 text-[#3FB950]' : 'bg-[#F85149]/10 text-[#F85149]'
@@ -96,7 +96,7 @@ const WatchlistItem: React.FC<{
                     </div>
                  </div>
              ) : (
-                 <div className="space-y-3 animate-pulse">
+                 <div className="space-y-3 animate-pulse w-full">
                      <div className="h-9 w-32 bg-brand-bg/50 rounded-lg"></div>
                      <div className="h-6 w-20 bg-brand-bg/50 rounded-lg"></div>
                  </div>

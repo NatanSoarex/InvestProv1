@@ -2,7 +2,7 @@
 import { Asset, Quote, AssetClass, HistoricalDataPoint, Transaction, MarketState } from '../types';
 
 // ============================================================================
-// PROVEST FINANCIAL ENGINE 8.0 (MEGA UPDATE - MULTI-SOURCE PRECISION)
+// PROVEST FINANCIAL ENGINE 9.0 (MEGA UPDATE - VARIATION HUNTER)
 // ============================================================================
 
 // --- Endpoints ---
@@ -254,8 +254,8 @@ const getCryptoMapping = (ticker: string) => {
 
 // --- Helper: Emergency Math Calculator ---
 const calculateFallbackMetrics = (quote: Quote): Quote => {
+    // Aggressive fallback: If change is 0 AND price is strictly different from prevClose
     if ((quote.change === 0 || quote.changePercent === 0) && quote.price > 0 && quote.previousClose > 0) {
-        // Force recalculation if API returns 0 but prices differ
         const diff = quote.price - quote.previousClose;
         if (Math.abs(diff) > 0.0000001) {
             quote.change = diff;
@@ -569,26 +569,29 @@ export const financialApi = {
             let quote: Quote | null = null;
             const { symbol, type } = normalizeTicker(rawTicker);
 
-            // PRIORITY CHAIN - UPDATED FOR MEGA UPDATE
+            // HUNTER ALGORITHM: PRIORITY LOOP FOR CRYPTO
             if (type === 'CRYPTO') {
-                // 1. Binance (Best Live)
-                quote = await providers.binance(symbol);
-                // 2. CoinCap (Best 24h %)
-                if (!quote || quote.changePercent === 0) {
-                    const q2 = await providers.coincap(symbol);
-                    if (q2) quote = q2; 
+                const cryptoSources = [
+                    providers.binance,
+                    providers.coincap,
+                    providers.kucoin,
+                    providers.coingecko,
+                    providers.yahoo,
+                    providers.coinbase // Last resort
+                ];
+
+                for (const provider of cryptoSources) {
+                    const q = await provider(type === 'CRYPTO' && provider === providers.yahoo ? `${symbol}-USD` : symbol);
+                    if (q) {
+                        // HUNTER CHECK: Do we have valid variation?
+                        if (Math.abs(q.changePercent) > 0.00001) {
+                            quote = q;
+                            break; // Stop hunting, we found good data!
+                        }
+                        // Keep the quote as fallback if it's the first valid one, but keep looking for better variation
+                        if (!quote) quote = q;
+                    }
                 }
-                // 3. KuCoin (Backup)
-                if (!quote || quote.changePercent === 0) {
-                    const q3 = await providers.kucoin(symbol);
-                    if (q3) quote = q3;
-                }
-                // 4. CoinGecko
-                if (!quote) quote = await providers.coingecko(symbol); 
-                // 5. Yahoo
-                if (!quote) quote = await providers.yahoo(`${symbol}-USD`); 
-                // 6. Coinbase (Last resort, often no change %)
-                if (!quote) quote = await providers.coinbase(symbol);
             } else if (type === 'BR') {
                 quote = await providers.brapi(symbol);
                 if (!quote) quote = await providers.yahoo(symbol);
