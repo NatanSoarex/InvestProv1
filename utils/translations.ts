@@ -1,5 +1,6 @@
 
 
+
 export const translations = {
   'pt-BR': {
     // Sidebar & Nav

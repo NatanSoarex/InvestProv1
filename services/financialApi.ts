@@ -2,7 +2,7 @@
 import { Asset, Quote, AssetClass, HistoricalDataPoint, Transaction, MarketState } from '../types';
 
 // ============================================================================
-// PROVEST FINANCIAL ENGINE 14.0 (SNAPSHOT MODE RESTORED)
+// PROVEST FINANCIAL ENGINE 15.0 (SNAPSHOT RESTORED + LOGO EXPANSION)
 // ============================================================================
 
 // --- Endpoints ---
@@ -65,7 +65,7 @@ export const TOP_ASSETS_FALLBACK = [
     { t: 'PETR4', n: 'Petrobras PN', c: AssetClass.STOCK }, { t: 'VALE3', n: 'Vale ON', c: AssetClass.STOCK },
     { t: 'MXRF11', n: 'Maxi Renda', c: AssetClass.FUND }, { t: 'HGLG11', n: 'CGHG Logística', c: AssetClass.FUND },
     { t: 'AAPL', n: 'Apple', c: AssetClass.STOCK }, { t: 'NVDA', n: 'NVIDIA', c: AssetClass.STOCK },
-    { t: 'VOO', n: 'Vanguard S&P 500', c: AssetClass.ETF }, { t: 'IVVB11', n: 'IVVB11', c: AssetClass.ETF }
+    { t: 'VOO', n: 'Vanguard S&P 500', c: AssetClass.ETF }, { t: 'IVVB11', n: 'iShares S&P 500', c: AssetClass.ETF }
 ];
 
 // --- Helpers ---
@@ -362,6 +362,7 @@ export const financialApi = {
             let quote: Quote | null = null;
 
             if (type === 'CRYPTO') {
+                // Prioritize exchanges for Crypto 24h data
                 const sources = [providers.binance, providers.coincap, providers.kucoin, providers.coingecko, providers.yahoo];
                 for (const provider of sources) {
                     const q = await provider(type === 'CRYPTO' && provider === providers.yahoo ? `${symbol}-USD` : symbol);
@@ -407,9 +408,7 @@ export const financialApi = {
         return 5.25; 
     },
 
-    // --- DASHBOARD HISTORY ENGINE (SNAPSHOT MODE) ---
-    // This mode applies CURRENT holdings to PAST prices to show the market trend line ("Up and Down")
-    // for the entire period, regardless of purchase date.
+    // --- DASHBOARD HISTORY ENGINE (SNAPSHOT MODE RESTORED) ---
     getPortfolioPriceHistory: async (
         transactions: Transaction[], 
         fxRate: number, 
@@ -424,7 +423,7 @@ export const financialApi = {
         
         if (range === '1D') {
             startTime.setHours(0, 0, 0, 0); 
-            interval = '5m'; // High Granularity for 1D
+            interval = '2m'; // Ultra High Granularity for 1D Volatility
         } else if (range === '5D') {
             startTime.setDate(now.getDate() - 5);
             interval = '15m';
@@ -472,11 +471,11 @@ export const financialApi = {
             timeline = Array.from(new Set(timestamps)).sort((a, b) => a - b);
         } 
         
-        // If we have no data points (e.g. market closed, API empty), generate a synthetic timeline
-        if (timeline.length < 5 && range === '1D') {
+        // Fallback Timeline if API fails (Flat Line)
+        if (timeline.length < 2) {
             const start = Math.floor(startTime.getTime() / 1000);
             const end = Math.floor(now.getTime() / 1000);
-            const points = 100; // Generate 100 points for smooth curve
+            const points = range === '1D' ? 60 : 30;
             const step = (end - start) / points; 
             for(let i=0; i<=points; i++) timeline.push(Math.floor(start + (i * step)));
         }
@@ -502,7 +501,7 @@ export const financialApi = {
                 
                 if (history) {
                     // Find closest timestamp
-                    const idx = history.timestamp.findIndex(t => Math.abs(t - ts) < 600); // 10 min buffer
+                    const idx = history.timestamp.findIndex(t => Math.abs(t - ts) < 600); 
                     if (idx !== -1 && history.close[idx]) {
                         price = history.close[idx];
                         lastKnownPrices[ticker] = price;
@@ -529,7 +528,7 @@ export const financialApi = {
             }
         });
 
-        // 4. Force Snap to Current Live Value (The 30s Update Hook)
+        // 4. Force Snap to Current Live Value
         if (currentQuotes) {
             let liveValue = 0;
             Object.keys(currentHoldings).forEach(t => {
@@ -540,8 +539,6 @@ export const financialApi = {
                     liveValue += val;
                 }
             });
-            
-            // Append live value as the absolute final point
             resultData.push({ date: now.toISOString(), price: liveValue });
         }
 

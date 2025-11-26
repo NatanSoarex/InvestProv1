@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { Card, CardHeader, CardContent } from '../ui/Card';
@@ -107,7 +106,7 @@ const Reports: React.FC = () => {
                 return;
             }
 
-            // 1. Get Full Price History (Snapshot Mode)
+            // 1. Get Full Price History (Snapshot Mode for Trend)
             const history = await financialApi.getPortfolioPriceHistory(transactions, fxRate, 'ALL');
             
             // 2. Find First Transaction Date (Absolute Start)
@@ -134,6 +133,7 @@ const Reports: React.FC = () => {
             history.forEach(point => {
                 const date = new Date(point.date);
                 const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                // Keep updating to get the last point of the month
                 groupedHistory[key] = {
                     dateKey: key,
                     netWorth: point.price,
@@ -156,12 +156,21 @@ const Reports: React.FC = () => {
                 const historyPoint = groupedHistory[key] || {};
                 let netWorth = historyPoint.netWorth || runningInvested;
                 
-                // CRITICAL FIX: 
-                // 1. If current month is BEFORE the first investment -> FORCE ZERO
-                // 2. If Accumulated Invested is ZERO -> FORCE ZERO GAIN
-                
-                if (currentMonthId < startMonthId || runningInvested <= 0) {
+                // CRITICAL FIX: STRICT ZEROING BEFORE START DATE
+                // If current month is BEFORE the first investment -> FORCE ZERO
+                if (currentMonthId < startMonthId) {
                     return {
+                        dateKey: key,
+                        displayDate: historyPoint.displayDate || key,
+                        invested: 0,
+                        gain: 0,
+                        totalValue: 0
+                    };
+                }
+
+                // If Accumulated Invested is ZERO -> FORCE ZERO GAIN
+                if (runningInvested <= 0) {
+                     return {
                         dateKey: key,
                         displayDate: historyPoint.displayDate || key,
                         invested: 0,
@@ -182,7 +191,7 @@ const Reports: React.FC = () => {
                 };
             });
 
-            // Filter out months with zero data at start
+            // Filter out initial zero months to clean up chart
             const firstActiveIndex = finalData.findIndex(d => d.invested > 0);
             const trimmedData = firstActiveIndex >= 0 ? finalData.slice(firstActiveIndex) : [];
 
