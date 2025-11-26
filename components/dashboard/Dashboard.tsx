@@ -106,6 +106,7 @@ const Dashboard: React.FC = () => {
       };
       
       try {
+        // Uses SNAPSHOT MODE (Current Holdings applied to past) to ensure "Up and Down" wave visualization
         const historyData = await financialApi.getPortfolioPriceHistory(transactions, fxRate, selectedRange, currentQuotesMap);
         setPortfolioHistory(historyData);
       } catch (e) {
@@ -128,7 +129,7 @@ const Dashboard: React.FC = () => {
       try {
           const d = new Date(val);
           if (selectedRange === '1D') {
-              // Force local time display for intraday
+              // Clean Hour Display (e.g., 10:00, 14:00)
               return d.toLocaleTimeString(settings.language, { hour: '2-digit', minute: '2-digit' });
           }
           if (selectedRange === '5D' || selectedRange === '1M') {
@@ -221,7 +222,7 @@ const Dashboard: React.FC = () => {
                             tickLine={false} 
                             axisLine={false} 
                             tickFormatter={formatXAxis}
-                            minTickGap={30} 
+                            minTickGap={70} 
                             dy={10}
                         />
                         
