@@ -27,8 +27,9 @@ const WatchlistItem: React.FC<{
   const changeValue = quote?.change ?? 0;
   const price = quote?.price ?? 0;
   
-  const isPositive = changeValue > 0.0001; 
-  const isNegative = changeValue < -0.0001;
+  // Precise logic to detect changes
+  const isPositive = changeValue > 0.000001; 
+  const isNegative = changeValue < -0.000001;
   const isZero = !isPositive && !isNegative;
   
   const timeLabel = asset.assetClass === 'Crypto' ? '24h' : 'Hoje';
@@ -112,7 +113,7 @@ const Watchlist: React.FC = () => {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(false); 
 
-  // FIX: Trigger refresh on mount to ensure 0% bug is fixed immediately for user
+  // FIX: Force refresh on mount to ensure we get FRESH variations (not 0%)
   useEffect(() => {
       refresh();
   }, []);

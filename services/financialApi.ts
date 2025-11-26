@@ -10,6 +10,9 @@ const COINGECKO_API = 'https://api.coingecko.com/api/v3';
 const AWESOMEAPI_BASE = 'https://economia.awesomeapi.com.br/json';
 const COINCAP_API = 'https://api.coincap.io/v2/assets';
 const KUCOIN_API = 'https://api.kucoin.com/api/v1/market/stats';
+const GATEIO_API = 'https://data.gateapi.io/api2/1/ticker';
+const BYBIT_API = 'https://api.bybit.com/v5/market/tickers';
+const KRAKEN_API = 'https://api.kraken.com/0/public/Ticker';
 
 const PROXIES = [
     (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
@@ -111,9 +114,9 @@ export const TOP_ASSETS_FALLBACK = [
     { t: 'VOO', n: 'Vanguard S&P 500', c: AssetClass.ETF }, { t: 'IVVB11', n: 'iShares S&P 500', c: AssetClass.ETF }
 ];
 
-const smartFetch = async (url: string, useProxy = true, timeoutMs = 2000) => {
+const smartFetch = async (url: string, useProxy = true, timeoutMs = 1800) => {
     const separator = url.includes('?') ? '&' : '?';
-    const bust = `_t=${Date.now()}-${Math.random()}`; 
+    const bust = `_t=${Date.now()}-${Math.floor(Math.random() * 10000)}`; 
     const finalUrl = `${url}${separator}${bust}`;
 
     const fetchWithTimeout = async (fetchUrl: string) => {
@@ -131,6 +134,7 @@ const smartFetch = async (url: string, useProxy = true, timeoutMs = 2000) => {
     };
 
     if (useProxy) {
+        // Proxy Rotation
         for (const proxyGen of PROXIES) {
             try {
                 const proxyUrl = proxyGen(finalUrl);
@@ -176,30 +180,28 @@ const normalizeTicker = (ticker: string) => {
 const getCryptoMapping = (ticker: string) => {
     const t = ticker.replace('-USD', '').toUpperCase();
     const binanceSymbol = ['USDT', 'USDC'].includes(t) ? `${t}USDC` : `${t}USDT`;
+    const krakenPair = ['BTC','ETH','XRP','SOL','ADA'].includes(t) ? `${t}USD` : `${t}USDT`;
     const coinId = { 
         'BTC': 'bitcoin', 'ETH': 'ethereum', 'SOL': 'solana', 'USDT': 'tether',
         'BNB': 'binancecoin', 'XRP': 'ripple', 'ADA': 'cardano', 'DOGE': 'dogecoin',
         'AVAX': 'avalanche-2', 'LINK': 'chainlink'
     }[t] || t.toLowerCase();
-    return { binanceSymbol, coinId };
+    return { binanceSymbol, coinId, krakenPair };
 };
 
-// CRITICAL FIX: Helper to FORCE calculation of change if API returns 0
+// CRITICAL: Force Calculation of Change if API Returns 0
 const calculateRobustMetrics = (price: number, prevClose: number, apiChange: number = 0, apiPercent: number = 0, state: MarketState = MarketState.REGULAR): Quote => {
-    // If we have valid prices but API says 0 change, we calculate it ourselves
-    // Also works if we have prices but no change data
     let change = apiChange;
     let changePercent = apiPercent;
 
+    // If API says 0% but we know Price and PrevClose, we calculate it.
     if (price > 0 && prevClose > 0) {
-        // If the API change is 0 OR looks suspicious (like Crypto 0% on volatile day)
-        // We override with math
-        const calculatedChange = price - prevClose;
+        const mathChange = price - prevClose;
         
-        // Tolerance for float errors
-        if (Math.abs(calculatedChange) > 0.000001) {
-            change = calculatedChange;
-            changePercent = (calculatedChange / prevClose) * 100;
+        // If API is missing change OR API says 0 but price moved significantly
+        if (Math.abs(apiChange) < 0.000001 || (Math.abs(mathChange) > 0.000001 && Math.abs(apiChange) < 0.000001)) {
+            change = mathChange;
+            changePercent = (mathChange / prevClose) * 100;
         }
     }
 
@@ -212,7 +214,10 @@ const calculateRobustMetrics = (price: number, prevClose: number, apiChange: num
     };
 };
 
+// --- 10+ DATA SOURCES ---
+
 const providers = {
+    // 1. BINANCE (Primary Crypto)
     binance: async (ticker: string): Promise<Quote | null> => {
         const { binanceSymbol } = getCryptoMapping(ticker);
         try {
@@ -225,6 +230,54 @@ const providers = {
         } catch (e) {}
         return null;
     },
+    // 2. GATE.IO (High Volume)
+    gateio: async (ticker: string): Promise<Quote | null> => {
+        const { binanceSymbol } = getCryptoMapping(ticker);
+        const symbol = binanceSymbol.replace('USDT','_USDT').replace('USDC','_USDC');
+        try {
+            const data = await smartFetch(`${GATEIO_API}/${symbol}`, false, 1500);
+            if (data?.last) {
+                const price = parseFloat(data.last);
+                const changePercent = parseFloat(data.percentChange);
+                const prev = price / (1 + (changePercent/100));
+                return calculateRobustMetrics(price, prev, price - prev, changePercent, MarketState.OPEN);
+            }
+        } catch (e) {}
+        return null;
+    },
+    // 3. BYBIT (Derivatives/Spot)
+    bybit: async (ticker: string): Promise<Quote | null> => {
+        const { binanceSymbol } = getCryptoMapping(ticker);
+        try {
+            const data = await smartFetch(`${BYBIT_API}?category=spot&symbol=${binanceSymbol}`, false, 1500);
+            const item = data?.result?.list?.[0];
+            if (item) {
+                const price = parseFloat(item.lastPrice);
+                const prev = parseFloat(item.prevPrice24h);
+                const changePercent = parseFloat(item.price24hPcnt) * 100;
+                return calculateRobustMetrics(price, prev, price - prev, changePercent, MarketState.OPEN);
+            }
+        } catch(e) {}
+        return null;
+    },
+    // 4. KRAKEN (Reliable)
+    kraken: async (ticker: string): Promise<Quote | null> => {
+        const { krakenPair } = getCryptoMapping(ticker);
+        try {
+            const data = await smartFetch(`${KRAKEN_API}?pair=${krakenPair}`, false, 2000);
+            if (data?.result) {
+                const key = Object.keys(data.result)[0];
+                const info = data.result[key];
+                const price = parseFloat(info.c[0]); // Last trade closed
+                const open24 = parseFloat(info.o);   // Opening price 24h ago
+                const change = price - open24;
+                const percent = (change / open24) * 100;
+                return calculateRobustMetrics(price, open24, change, percent, MarketState.OPEN);
+            }
+        } catch(e) {}
+        return null;
+    },
+    // 5. COINCAP
     coincap: async (ticker: string): Promise<Quote | null> => {
         const { coinId } = getCryptoMapping(ticker);
         try {
@@ -238,6 +291,7 @@ const providers = {
         } catch (e) {}
         return null;
     },
+    // 6. KUCOIN
     kucoin: async (ticker: string): Promise<Quote | null> => {
         const { binanceSymbol } = getCryptoMapping(ticker);
         const symbol = binanceSymbol.replace('USDT', '-USDT').replace('USDC', '-USDC');
@@ -253,6 +307,7 @@ const providers = {
         } catch (e) {}
         return null;
     },
+    // 7. COINGECKO
     coingecko: async (ticker: string): Promise<Quote | null> => {
         const { coinId } = getCryptoMapping(ticker);
         try {
@@ -267,9 +322,25 @@ const providers = {
         } catch (e) {}
         return null;
     },
+    // 8. AWESOMEAPI (Currency & Crypto Backup)
+    awesome: async (ticker: string): Promise<Quote | null> => {
+        const t = ticker.replace('-USD','').toUpperCase();
+        try {
+            const data = await smartFetch(`${AWESOMEAPI_BASE}/last/${t}-USD`, false, 1500);
+            const key = `${t}USD`;
+            if (data[key]) {
+                const price = parseFloat(data[key].bid);
+                const changePercent = parseFloat(data[key].pctChange);
+                const prev = price / (1 + (changePercent/100));
+                return calculateRobustMetrics(price, prev, price - prev, changePercent, MarketState.OPEN);
+            }
+        } catch (e) {}
+        return null;
+    },
+    // 9. YAHOO FINANCE (Stocks/Global/Backup)
     yahoo: async (ticker: string): Promise<Quote | null> => {
         try {
-            const data = await smartFetch(`${YAHOO_QUOTE_API}?symbols=${ticker}`, true, 4000);
+            const data = await smartFetch(`${YAHOO_QUOTE_API}?symbols=${ticker}`, true, 3500);
             const q = data?.quoteResponse?.result?.[0];
             if (q) {
                 const price = q.regularMarketPrice || 0;
@@ -283,7 +354,6 @@ const providers = {
                 if (state === MarketState.PRE && q.preMarketPrice) finalPrice = q.preMarketPrice;
                 if (state === MarketState.POST && q.postMarketPrice) finalPrice = q.postMarketPrice;
 
-                // Force calculation using Previous Close to fix 0% bug on ETFs/Stocks
                 return calculateRobustMetrics(
                     finalPrice, 
                     prev, 
@@ -295,9 +365,10 @@ const providers = {
         } catch (e) {}
         return null;
     },
+    // 10. BRAPI (Brazilian Stocks)
     brapi: async (ticker: string): Promise<Quote | null> => {
         try {
-            const data = await smartFetch(`${BRAPI_BASE_URL}/quote/${ticker}`, false, 3000);
+            const data = await smartFetch(`${BRAPI_BASE_URL}/quote/${ticker}`, false, 2500);
             const r = data?.results?.[0];
             if (r) {
                 const price = r.regularMarketPrice || 0;
@@ -311,26 +382,6 @@ const providers = {
                 );
             }
         } catch (e) {}
-        return null;
-    },
-    chartFallback: async (ticker: string): Promise<Quote | null> => {
-        try {
-            const url = `${YAHOO_CHART_API}/${ticker}?interval=1d&range=1d`;
-            const data = await smartFetch(url, true, 4000);
-            const result = data?.chart?.result?.[0]?.meta;
-            if (result?.regularMarketPrice) {
-                const price = result.regularMarketPrice;
-                const prev = result.previousClose || price;
-                // Chart API guarantees previousClose, so calculation is solid here
-                return calculateRobustMetrics(
-                    price, 
-                    prev, 
-                    price - prev, 
-                    ((price - prev) / prev) * 100, 
-                    MarketState.REGULAR
-                );
-            }
-        } catch(e) {}
         return null;
     }
 };
@@ -399,6 +450,7 @@ export const financialApi = {
         const toFetch: string[] = [];
 
         tickers.forEach(t => {
+            // Shorter cache TTL for quotes to ensure freshness
             if (cache.quotes[t] && (now - cache.quotes[t].timestamp < CACHE_TTL.QUOTE)) {
                 result[t] = cache.quotes[t].data;
             } else {
@@ -413,15 +465,28 @@ export const financialApi = {
             let quote: Quote | null = null;
 
             if (type === 'CRYPTO') {
-                const sources = [providers.binance, providers.coincap, providers.kucoin, providers.coingecko, providers.yahoo];
+                // MEGA UPDATE: Priority Chain with 8 Sources for Crypto
+                const sources = [
+                    providers.gateio, 
+                    providers.bybit, 
+                    providers.binance, 
+                    providers.kraken, 
+                    providers.coincap, 
+                    providers.kucoin, 
+                    providers.coingecko, 
+                    providers.awesome,
+                    providers.yahoo
+                ];
+                
                 for (const provider of sources) {
                     const q = await provider(type === 'CRYPTO' && provider === providers.yahoo ? `${symbol}-USD` : symbol);
                     if (q) {
-                        // HUNTER ALGORITHM: Prefer quotes with actual change data
+                        // HUNTER ALGORITHM: Accept if change is NOT zero or if we tried everything
                         if (Math.abs(q.changePercent) > 0.00001) {
-                            quote = q; break; 
-                        } else if (!quote) {
                             quote = q; 
+                            break; 
+                        } else if (!quote) {
+                            quote = q; // Keep best effort
                         }
                     }
                 }
@@ -433,10 +498,23 @@ export const financialApi = {
                 quote = await providers.yahoo(symbol);
             }
 
-            // Fallback to Chart API if Quote API fails or returns 0 change
+            // Fallback to Chart API if Quote API fails completely on logic (0% stocks)
             if (!quote || quote.price === 0 || (quote.change === 0 && type !== 'CRYPTO')) {
-                const chartQ = await providers.chartFallback(symbol);
-                if (chartQ) quote = chartQ;
+                // For Stocks, 0% change might mean market closed, but we check Chart just in case
+                try {
+                    const url = `${YAHOO_CHART_API}/${symbol}?interval=1d&range=1d`;
+                    const data = await smartFetch(url, true, 4000);
+                    const meta = data?.chart?.result?.[0]?.meta;
+                    if (meta?.regularMarketPrice) {
+                        quote = calculateRobustMetrics(
+                            meta.regularMarketPrice, 
+                            meta.previousClose, 
+                            meta.regularMarketPrice - meta.previousClose, 
+                            0, // Let calc handle it
+                            MarketState.REGULAR
+                        );
+                    }
+                } catch(e) {}
             }
 
             if (quote) {
@@ -471,7 +549,6 @@ export const financialApi = {
         let interval = '1d';
         
         if (range === '1D') {
-            // 24 Hours Rolling Window for full day visual
             startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000); 
             interval = '5m'; 
         } else if (range === '5D') {
