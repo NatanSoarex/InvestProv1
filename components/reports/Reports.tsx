@@ -2,51 +2,58 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { Card, CardHeader, CardContent } from '../ui/Card';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell, CartesianGrid, ComposedChart, Line, Area } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell, CartesianGrid } from 'recharts';
 import { Holding } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { financialApi } from '../../services/financialApi';
 
-const COLORS = ['#58A6FF', '#3FB950', '#F85149', '#FFC658', '#8884d8'];
+const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
 
-const AssetClassAllocation: React.FC<{ holdings: Holding[], noDataText: string }> = ({ holdings, noDataText }) => {
+// Donut Chart with Central Text
+const AssetAllocation: React.FC<{ holdings: Holding[], noDataText: string }> = ({ holdings, noDataText }) => {
+    const { formatDisplayValue, totalValue } = usePortfolio();
+    
     const data = useMemo(() => {
-        const classValues: { [key: string]: number } = holdings.reduce((acc, holding) => {
-            const value = holding.currentValueUSD;
-            acc[holding.asset.assetClass] = (acc[holding.asset.assetClass] || 0) + value;
-            return acc;
-        }, {} as { [key: string]: number });
-
-        return Object.entries(classValues).map(([name, value]) => ({ name, value }));
-
+        return holdings
+            .map(h => ({ name: h.asset.ticker, value: h.currentValueUSD }))
+            .sort((a, b) => b.value - a.value);
     }, [holdings]);
 
     if (data.length === 0) return <div className="flex items-center justify-center h-full text-brand-secondary">{noDataText}</div>
 
     return (
-        <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-                <Pie
-                    data={data}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    outerRadius={110}
-                    fill="#8884d8"
-                    dataKey="value"
-                    nameKey="name"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                >
-                    {data.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                </Pie>
-                <Tooltip 
-                    contentStyle={{ backgroundColor: '#161B22', border: '1px solid #30363D', borderRadius: '0.5rem'}}
-                    formatter={(value) => formatCurrency(value as number, 'USD')} 
-                />
-            </PieChart>
-        </ResponsiveContainer>
+        <div className="relative h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                    <Pie
+                        data={data}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={80} // Donut Style
+                        outerRadius={110}
+                        paddingAngle={2}
+                        dataKey="value"
+                        nameKey="name"
+                        stroke="none"
+                    >
+                        {data.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                    </Pie>
+                    <Tooltip 
+                        contentStyle={{ backgroundColor: '#161B22', border: '1px solid #30363D', borderRadius: '0.5rem', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)' }}
+                        itemStyle={{ color: '#C9D1D9', fontWeight: 600 }}
+                        formatter={(value) => formatCurrency(value as number, 'USD')} 
+                    />
+                    <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                </PieChart>
+            </ResponsiveContainer>
+            {/* Central Text Overlay */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pb-8">
+                <span className="text-brand-secondary text-xs font-medium uppercase tracking-wider">Total</span>
+                <span className="text-brand-text text-xl font-bold">{formatDisplayValue(totalValue)}</span>
+            </div>
+        </div>
     );
 };
 
@@ -58,16 +65,16 @@ const TopPerformers: React.FC<{ holdings: Holding[] }> = ({ holdings }) => {
             {sortedHoldings.slice(0, 5).map(h => {
                 const gainInUSD = h.totalGainLossUSD;
                 return (
-                    <div key={h.asset.ticker} className="flex justify-between items-center py-2 border-b border-brand-border last:border-b-0">
-                        <div className="flex items-center gap-2">
-                            <img src={h.asset.logo} className="w-6 h-6 rounded-full bg-brand-surface" alt="" onError={(e) => e.currentTarget.src=`https://ui-avatars.com/api/?name=${h.asset.ticker}&background=30363D&color=C9D1D9`}/>
+                    <div key={h.asset.ticker} className="flex justify-between items-center py-3 border-b border-brand-border last:border-b-0">
+                        <div className="flex items-center gap-3">
+                            <img src={h.asset.logo} className="w-8 h-8 rounded-full bg-brand-surface object-cover border border-brand-border" alt="" onError={(e) => e.currentTarget.src=`https://ui-avatars.com/api/?name=${h.asset.ticker}&background=30363D&color=C9D1D9`}/>
                             <div>
-                                <p className="font-semibold">{h.asset.ticker}</p>
-                                <p className="text-[10px] text-brand-secondary">{h.asset.name.substring(0, 20)}</p>
+                                <p className="font-bold text-brand-text">{h.asset.ticker}</p>
+                                <p className="text-[10px] text-brand-secondary uppercase">{h.asset.assetClass}</p>
                             </div>
                         </div>
-                        <div className={`font-medium text-sm ${gainInUSD >= 0 ? 'text-brand-success' : 'text-brand-danger'}`}>
-                            {formatCurrency(gainInUSD, 'USD')}
+                        <div className={`font-bold text-sm ${gainInUSD >= 0 ? 'text-brand-success' : 'text-brand-danger'}`}>
+                            {gainInUSD > 0 ? '+' : ''}{formatCurrency(gainInUSD, 'USD')}
                         </div>
                     </div>
                 );
@@ -77,11 +84,11 @@ const TopPerformers: React.FC<{ holdings: Holding[] }> = ({ holdings }) => {
 }
 
 const Reports: React.FC = () => {
-    const { holdings, totalInvested, totalValue, totalGainLoss, totalGainLossPercent, transactions, fxRate, t, settings, formatDisplayValue } = usePortfolio();
+    const { holdings, totalInvested, totalValue, totalGainLoss, transactions, fxRate, t, settings, formatDisplayValue } = usePortfolio();
     const [monthlyData, setMonthlyData] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    // 1. Calculate Monthly Evolution (Staircase)
+    // 1. Calculate Monthly Evolution (Staircase Style: Invested vs Gain)
     useEffect(() => {
         const processHistory = async () => {
             if (transactions.length === 0) {
@@ -89,17 +96,14 @@ const Reports: React.FC = () => {
                 return;
             }
 
-            // Get ALL history to build the full timeline
             const history = await financialApi.getPortfolioPriceHistory(transactions, fxRate, 'ALL');
-            
-            // Group by Month (YYYY-MM)
             const grouped: Record<string, any> = {};
             
             history.forEach(point => {
                 const date = new Date(point.date);
                 const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
                 
-                // Keep the last point of the month (closing balance)
+                // Last point of month
                 grouped[key] = {
                     dateKey: key,
                     timestamp: date.getTime(),
@@ -109,16 +113,16 @@ const Reports: React.FC = () => {
                 };
             });
 
-            // Convert to array and Calculate Contributions (Flow)
             const sortedMonths = Object.values(grouped).sort((a: any, b: any) => a.timestamp - b.timestamp);
             
-            const finalData = sortedMonths.map((month: any, index: number) => {
-                const prevInvested = index > 0 ? sortedMonths[index-1].invested : 0;
-                const contribution = Math.max(0, month.invested - prevInvested); // New money added this month
-                
+            // Prepare data for Stacked Bar (Invested + Gain)
+            const finalData = sortedMonths.map((month: any) => {
+                const gain = month.balance - month.invested;
                 return {
                     ...month,
-                    contribution,
+                    gain: gain > 0 ? gain : 0, // If negative, we handle differently or clip for stacked viz
+                    investedBar: month.invested,
+                    fullBalance: month.balance // For tooltip
                 };
             });
 
@@ -129,19 +133,6 @@ const Reports: React.FC = () => {
         processHistory();
     }, [transactions, fxRate, settings.language]);
 
-    // 2. Stats Calculation
-    const stats = useMemo(() => {
-        if (monthlyData.length === 0) return { bestMonth: '-', yield: 0 };
-        
-        const sortedByBalance = [...monthlyData].sort((a,b) => b.balance - a.balance);
-        const avgYield = holdings.reduce((acc, h) => acc + (h.asset.dividendYield || 0), 0) / (holdings.length || 1);
-
-        return {
-            bestMonth: sortedByBalance[0].displayDate,
-            yield: avgYield
-        }
-    }, [monthlyData, holdings]);
-
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
             <div>
@@ -149,46 +140,51 @@ const Reports: React.FC = () => {
                 <p className="text-brand-secondary mt-1">{t('reportsSubtitle')}</p>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card>
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="border-l-4 border-l-brand-secondary">
                     <CardContent>
-                        <div className="text-sm text-brand-secondary">{t('totalInvested')}</div>
-                        <div className="text-2xl font-bold text-brand-text">{formatDisplayValue(totalInvested)}</div>
+                        <div className="text-xs font-bold uppercase text-brand-secondary tracking-wider">{t('totalInvested')}</div>
+                        <div className="text-2xl font-bold text-brand-text mt-1">{formatDisplayValue(totalInvested)}</div>
                     </CardContent>
                 </Card>
-                <Card>
+                <Card className="border-l-4 border-l-brand-primary">
                     <CardContent>
-                        <div className="text-sm text-brand-secondary">{t('finalBalance')}</div>
-                        <div className="text-2xl font-bold text-brand-primary">{formatDisplayValue(totalValue)}</div>
+                        <div className="text-xs font-bold uppercase text-brand-secondary tracking-wider">{t('finalBalance')}</div>
+                        <div className="text-2xl font-bold text-brand-primary mt-1">{formatDisplayValue(totalValue)}</div>
                     </CardContent>
                 </Card>
-                <Card>
+                <Card className={`border-l-4 ${totalGainLoss >= 0 ? 'border-l-brand-success' : 'border-l-brand-danger'}`}>
                     <CardContent>
-                        <div className="text-sm text-brand-secondary">{t('monthlyYield')} (USD)</div>
-                        <div className={`text-2xl font-bold ${totalGainLoss >=0 ? 'text-brand-success':'text-brand-danger'}`}>
-                            {formatCurrency(totalGainLoss, 'USD')}
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent>
-                        <div className="text-sm text-brand-secondary">{t('estimatedDividends')}</div>
-                        <div className="text-2xl font-bold text-yellow-400">
-                            {stats.yield.toFixed(2)}%
+                        <div className="text-xs font-bold uppercase text-brand-secondary tracking-wider">{t('monthlyYield')} (Total)</div>
+                        <div className={`text-2xl font-bold mt-1 ${totalGainLoss >= 0 ? 'text-brand-success' : 'text-brand-danger'}`}>
+                            {totalGainLoss > 0 ? '+' : ''}{formatCurrency(totalGainLoss, 'USD')}
                         </div>
                     </CardContent>
                 </Card>
             </div>
 
-            {/* MAIN CHART: Reports Special (Bar + Line) */}
-            <Card className="bg-brand-surface/50 backdrop-blur-sm border-brand-border/50">
-                <CardHeader className="border-brand-border/30">{t('monthlyEvolution')}</CardHeader>
+            {/* MAIN CHART: Stacked Bar (Investidor 10 Style) */}
+            <Card className="bg-brand-surface border-brand-border">
+                <CardHeader className="flex items-center gap-2 border-brand-border/30">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-brand-primary" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+                    </svg>
+                    {t('monthlyEvolution')}
+                </CardHeader>
                 <CardContent className="h-[400px]">
                     {monthlyData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
-                            <ComposedChart data={monthlyData} margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
+                            <BarChart data={monthlyData} margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#30363D" opacity={0.3} vertical={false} />
-                                <XAxis dataKey="displayDate" stroke="#8B949E" fontSize={10} tickLine={false} axisLine={false} />
+                                <XAxis 
+                                    dataKey="displayDate" 
+                                    stroke="#8B949E" 
+                                    fontSize={10} 
+                                    tickLine={false} 
+                                    axisLine={false} 
+                                    dy={10}
+                                />
                                 <YAxis 
                                     stroke="#8B949E" 
                                     fontSize={10} 
@@ -197,27 +193,33 @@ const Reports: React.FC = () => {
                                     tickFormatter={(val) => new Intl.NumberFormat('en-US', { notation: "compact", compactDisplay: "short" }).format(val)}
                                 />
                                 <Tooltip 
+                                    cursor={{ fill: '#30363D', opacity: 0.2 }}
                                     contentStyle={{ backgroundColor: '#161B22', border: '1px solid #30363D', borderRadius: '8px' }}
-                                    itemStyle={{ fontSize: '12px' }}
-                                    formatter={(value: number, name: string) => {
-                                        if (name === 'Patrimônio') return [formatCurrency(value, 'USD'), t('finalBalance')];
-                                        if (name === 'Total Investido') return [formatCurrency(value, 'USD'), t('accumulatedInvested')];
-                                        if (name === 'Aporte') return [formatCurrency(value, 'USD'), t('monthlyContribution')];
-                                        return [value, name];
-                                    }}
+                                    itemStyle={{ fontSize: '12px', fontWeight: 600 }}
+                                    formatter={(value: number, name: string) => [formatCurrency(value, 'USD'), name]}
+                                    labelStyle={{ color: '#8B949E', marginBottom: '5px' }}
                                 />
-                                <Legend verticalAlign="top" height={36} iconType="circle" />
+                                <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px', fontWeight: 500 }} />
                                 
-                                {/* Bars: Contributions (Blue) - Represents effort */}
-                                <Bar dataKey="contribution" name="Aporte" fill="#58A6FF" barSize={20} radius={[4, 4, 0, 0]} opacity={0.7} />
+                                {/* Stacked Bars */}
+                                <Bar 
+                                    dataKey="investedBar" 
+                                    name={t('appliedValue')} 
+                                    stackId="a" 
+                                    fill="#10B981"  // Darker Green (Base)
+                                    radius={[0, 0, 0, 0]} 
+                                    barSize={24} 
+                                />
+                                <Bar 
+                                    dataKey="gain" 
+                                    name={t('capitalGain')} 
+                                    stackId="a" 
+                                    fill="#6EE7B7" // Lighter Green (Top)
+                                    radius={[4, 4, 0, 0]} 
+                                    barSize={24} 
+                                />
                                 
-                                {/* Line: Total Invested (Gray) - Represents base */}
-                                <Line type="stepAfter" dataKey="invested" name="Total Investido" stroke="#8B949E" strokeWidth={2} strokeDasharray="3 3" dot={false} />
-                                
-                                {/* Area: Balance (Green) - Represents result */}
-                                <Line type="monotone" dataKey="balance" name="Patrimônio" stroke="#3FB950" strokeWidth={3} dot={{r: 3, fill: '#3FB950'}} />
-                            
-                            </ComposedChart>
+                            </BarChart>
                         </ResponsiveContainer>
                     ) : (
                         <div className="flex items-center justify-center h-full text-brand-secondary flex-col gap-2">
@@ -232,13 +234,13 @@ const Reports: React.FC = () => {
             </Card>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                 <Card className="lg:col-span-2">
+                 <Card className="lg:col-span-2 border-brand-border">
                     <CardHeader>{t('allocationByClass')}</CardHeader>
                     <CardContent className="h-80 flex items-center justify-center">
-                        <AssetClassAllocation holdings={holdings} noDataText={t('noData')} />
+                        <AssetAllocation holdings={holdings} noDataText={t('noData')} />
                     </CardContent>
                 </Card>
-                <Card>
+                <Card className="border-brand-border">
                     <CardHeader>{t('topPerformers')}</CardHeader>
                     <CardContent>
                          {holdings.length > 0 ? <TopPerformers holdings={holdings} /> : <div className="text-center p-8 text-brand-secondary">{t('noData')}</div>}

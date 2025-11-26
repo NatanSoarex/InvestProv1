@@ -67,7 +67,6 @@ const useLocalStorage = <T,>(key: string, initialValue: T) => {
   return [storedValue, setStoredValue] as const;
 };
 
-// Helper Retry for Data Loading
 async function retryFetch<T>(operation: () => Promise<T>, retries = 3): Promise<T> {
     try {
         return await operation();
@@ -82,18 +81,14 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const { currentUser, isPremium: checkIsPremium } = useAuth();
   const userKey = currentUser ? currentUser.id : 'guest';
 
-  // --- STATES ---
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [watchlist, setWatchlist] = useState<string[]>([]);
   
-  // Local Storage Hooks (Fallback)
   const [localTransactions, setLocalTransactions] = useLocalStorage<Transaction[]>(`transactions_${userKey}`, []);
   const [localWatchlist, setLocalWatchlist] = useLocalStorage<string[]>(`watchlist_${userKey}`, []);
   
-  // Settings with Validation Guard
   const [settings, setSettings] = useLocalStorage<AppSettings>('appSettings', { currency: 'BRL', language: 'pt-BR' });
   
-  // Settings Guard
   useEffect(() => {
       if (settings.currency !== 'BRL' && settings.currency !== 'USD') {
           setSettings(prev => ({ ...prev, currency: 'BRL' }));
@@ -103,7 +98,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
   }, []);
 
-  // PERFORMANCE FIX: Cache Quotes and FX Rate to display immediately on load
   const [quotes, setQuotes] = useLocalStorage<Record<string, Quote>>('cached_quotes', {});
   const [fxRate, setFxRate] = useLocalStorage<number>('cached_fx_rate', 5.25);
   
@@ -114,7 +108,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const isPremiumUser = currentUser ? checkIsPremium(currentUser) : false;
 
-  // --- SYNC LOGIC: LOAD DATA ON LOGIN (With Retry) ---
   useEffect(() => {
       const loadData = async () => {
           if (isSupabaseConfigured && currentUser) {
@@ -170,8 +163,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
   }, [currentUser, localTransactions, localWatchlist]); 
 
-  // --- HELPERS DE DADOS ---
-
   const allTickers = useMemo(() => {
     const portfolioTickers = transactions.map(t => t.ticker);
     return Array.from(new Set([...portfolioTickers, ...watchlist]));
@@ -203,7 +194,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (allTickers.length === 0) return;
       setIsRefreshing(true);
       try {
-          // Use new Mega Update API Logic
           const [newQuotes, newFxRate] = await Promise.all([
               financialApi.getQuotes(allTickers),
               financialApi.getFxRate('USD', 'BRL')
@@ -224,15 +214,12 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return () => clearInterval(intervalId);
   }, [refresh]);
 
-  // --- SUBSCRIPTION LOGIC ---
   const uniqueAssets = useMemo(() => Array.from(new Set(transactions.map(t => t.ticker))), [transactions]);
   const { validTickers, lockedTickers } = useMemo(() => {
       if (isPremiumUser) return { validTickers: uniqueAssets, lockedTickers: [] };
       return { validTickers: uniqueAssets.slice(0, 6), lockedTickers: uniqueAssets.slice(6) };
   }, [uniqueAssets, isPremiumUser]);
   const canAddAsset = isPremiumUser || uniqueAssets.length < 6;
-
-  // --- ACTIONS (CRUD) ---
 
   const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id'>) => {
     const cleanTicker = transaction.ticker.toUpperCase().trim();
@@ -283,7 +270,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [isPremiumUser, validTickers, uniqueAssets, currentUser, setLocalTransactions]);
 
   const importTransactions = useCallback(async (newTransactions: Omit<Transaction, 'id'>[]) => {
-      console.log("Import functionality is currently disabled via UI");
+      console.log("Import disabled");
   }, []);
 
   const removeTransaction = useCallback(async (id: string) => {
@@ -360,7 +347,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return translations[settings.language][key] || key;
   }, [settings.language]);
 
-  // --- CALCULATION LOGIC (CORE FIX) ---
   const { holdings, totalValue, totalInvested, totalGainLoss, totalGainLossPercent, dayChange, dayChangePercent } = useMemo(() => {
     try {
         const holdingsMap: any = {};
@@ -380,7 +366,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         
         const holdingsList = Object.values(holdingsMap).map((h: any) => {
           let asset = assets[h.ticker];
-          
           if (!asset) {
               asset = {
                   ticker: h.ticker,
@@ -395,24 +380,24 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           const quote = quotes[h.ticker];
           h.averagePrice = h.totalQuantity > 0 ? h.totalInvested / h.totalQuantity : 0;
           
-          // LOGIC FIX: "Frozen" Portfolio & Negative Balance
-          // Priority: 1. Live Price -> 2. Prev Close -> 3. Cost Basis (Last Resort)
           let finalPrice = 0;
           
+          // FORCE PRICE LOGIC: If quote.price is 0, try previous close.
+          // If still 0, we fallback to average price (breakeven) visually, 
+          // but calculating gain/loss needs a real price.
           if (quote && Number(quote.price) > 0) {
               finalPrice = Number(quote.price);
           } else if (quote && Number(quote.previousClose) > 0) {
               finalPrice = Number(quote.previousClose); 
           }
 
-          // If price found, calculate value. If not, assume break-even (safe)
           if (finalPrice > 0) {
               h.currentValue = finalPrice * h.totalQuantity;
           } else {
+              // Fallback to prevent -100% drop if API is loading
               h.currentValue = h.totalInvested; 
           }
           
-          // Pure Math: Current - Invested = Gain/Loss (Can be negative)
           h.totalGainLoss = h.currentValue - h.totalInvested;
           h.totalGainLossPercent = h.totalInvested > 0 ? (h.totalGainLoss / h.totalInvested) * 100 : 0;
           
@@ -429,10 +414,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                      
                      if (isToday) {
                          const txPrice = Number(t.price) || 0;
-                         // Day change for new buy = Current - BuyPrice
                          holdingDayChange += (price - txPrice) * t.quantity;
                      } else {
-                         // Math Fallback for day change if API returns 0 change but we have prices
                          let dailyDiff = quote.change;
                          if (dailyDiff === 0 && quote.price > 0 && quote.previousClose > 0) {
                              dailyDiff = quote.price - quote.previousClose;
@@ -447,17 +430,13 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           const rateToUSD = isBRLAsset && fxRate > 0 ? (1/fxRate) : 1;
           holdingDayChangeUSD = holdingDayChange * rateToUSD;
 
-          // Calculate denominator for day percent correctly
-          const denominator = h.currentValue - holdingDayChange;
-          const dayPercent = denominator > 0 ? (holdingDayChange / denominator) * 100 : 0;
-
           return { 
               ...h, 
               asset, 
               quote: quote || null, 
               dayChange: holdingDayChange || 0, 
               dayChangeUSD: holdingDayChangeUSD || 0,
-              dayChangePercent: isNaN(dayPercent) ? 0 : dayPercent
+              dayChangePercent: h.currentValue > 0 ? (holdingDayChange / h.currentValue) * 100 : 0
           };
         });
 
@@ -466,7 +445,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const finalHoldings = holdingsList.map((h: any) => {
             const isBRL = h.asset.country === 'Brazil';
             const rate = isBRL && fxRate > 0 ? (1/fxRate) : 1;
-            
             const isLocked = !validTickers.includes(h.asset.ticker);
             
             const cvUSD = h.currentValue * rate;
@@ -491,8 +469,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
         const tglUSD = totalValueUSD - totalInvestedUSD;
         const tglpUSD = totalInvestedUSD > 0 ? (tglUSD / totalInvestedUSD) * 100 : 0;
-        const denominatorTotal = totalValueUSD - dayChangeUSD;
-        const dcpUSD = denominatorTotal > 0 ? (dayChangeUSD / denominatorTotal) * 100 : 0;
+        const dcpUSD = totalValueUSD > 0 ? (dayChangeUSD / totalValueUSD) * 100 : 0;
 
         return {
             holdings: finalHoldings,

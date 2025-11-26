@@ -91,10 +91,10 @@ export const translations = {
     reportsTitle: 'Relatórios de Desempenho',
     reportsSubtitle: 'Analise o desempenho do seu portfólio ao longo do tempo.',
     profitabilityByAsset: 'Rentabilidade por Ativo',
-    allocationByClass: 'Alocação por Classe',
+    allocationByClass: 'Alocação por Ativo',
     topPerformers: 'Top 5 Melhores (Ganho em USD)',
     noData: 'Nenhum ativo para exibir.',
-    monthlyEvolution: 'Evolução Mensal (Aporte vs. Resultado)',
+    monthlyEvolution: 'Evolução do Patrimônio',
     monthlyContribution: 'Aporte do Mês',
     monthlyYield: 'Rendimento Acum.',
     accumulatedInvested: 'Total Investido',
@@ -102,6 +102,8 @@ export const translations = {
     estimatedDividends: 'Div. Yield Médio',
     bestMonth: 'Melhor Mês (Patrimônio)',
     worstMonth: 'Maior Queda',
+    appliedValue: 'Valor Aplicado',
+    capitalGain: 'Ganho de Capital',
 
     // Projections
     projectionsTitle: 'Projeções Futuras',
@@ -224,10 +226,10 @@ export const translations = {
     reportsTitle: 'Performance Reports',
     reportsSubtitle: 'Analyze your portfolio performance over time.',
     profitabilityByAsset: 'Profitability by Asset',
-    allocationByClass: 'Allocation by Class',
+    allocationByClass: 'Allocation by Asset',
     topPerformers: 'Top 5 Performers (Gain in USD)',
     noData: 'No assets to display.',
-    monthlyEvolution: 'Monthly Evolution',
+    monthlyEvolution: 'Wealth Evolution',
     monthlyContribution: 'Monthly Contrib.',
     monthlyYield: 'Accum. Yield',
     accumulatedInvested: 'Total Investido',
@@ -235,6 +237,8 @@ export const translations = {
     estimatedDividends: 'Est. Div. Yield',
     bestMonth: 'Best Month (Net Worth)',
     worstMonth: 'Worst Month',
+    appliedValue: 'Applied Value',
+    capitalGain: 'Capital Gain',
 
     // Projections
     projectionsTitle: 'Future Projections',
