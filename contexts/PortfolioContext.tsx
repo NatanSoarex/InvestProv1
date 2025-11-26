@@ -382,9 +382,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           
           let finalPrice = 0;
           
-          // FORCE PRICE LOGIC: If quote.price is 0, try previous close.
-          // If still 0, we fallback to average price (breakeven) visually, 
-          // but calculating gain/loss needs a real price.
+          // FORCE PRICE LOGIC: If quote.price is 0, try previousClose.
+          // If still 0, we fallback to cost basis to prevent -100% loss display (Frozen/Safety state).
+          // This fixes the "I put an asset and lost everything" issue.
           if (quote && Number(quote.price) > 0) {
               finalPrice = Number(quote.price);
           } else if (quote && Number(quote.previousClose) > 0) {
@@ -394,7 +394,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           if (finalPrice > 0) {
               h.currentValue = finalPrice * h.totalQuantity;
           } else {
-              // Fallback to prevent -100% drop if API is loading
+              // SAFETY NET: If API fails completely or is loading, assume breakeven (0% profit/loss)
+              // This prevents the "Negative Balance" shock.
               h.currentValue = h.totalInvested; 
           }
           
