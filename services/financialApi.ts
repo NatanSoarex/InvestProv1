@@ -82,7 +82,8 @@ const LOGO_MAP: Record<string, string> = {
     'INTC': 'https://logo.clearbit.com/intel.com',
 
     // Major US ETFs (Mapped to Issuer Logos for Consistency)
-    // Vanguard
+    // Vanguard (VT included here to fix incorrect image)
+    'VT': 'https://logo.clearbit.com/vanguard.com',
     'VOO': 'https://logo.clearbit.com/vanguard.com',
     'VTI': 'https://logo.clearbit.com/vanguard.com',
     'VGT': 'https://logo.clearbit.com/vanguard.com',
@@ -90,9 +91,15 @@ const LOGO_MAP: Record<string, string> = {
     'BND': 'https://logo.clearbit.com/vanguard.com',
     'VUG': 'https://logo.clearbit.com/vanguard.com',
     'VYM': 'https://logo.clearbit.com/vanguard.com',
+    'VWO': 'https://logo.clearbit.com/vanguard.com',
+    'VXUS': 'https://logo.clearbit.com/vanguard.com',
+    'BNDX': 'https://logo.clearbit.com/vanguard.com',
+    
     // Invesco
     'QQQ': 'https://logo.clearbit.com/invesco.com',
     'QQQM': 'https://logo.clearbit.com/invesco.com',
+    'RSP': 'https://logo.clearbit.com/invesco.com',
+    
     // SPDR (State Street)
     'SPY': 'https://logo.clearbit.com/ssga.com',
     'DIA': 'https://logo.clearbit.com/ssga.com',
@@ -100,11 +107,15 @@ const LOGO_MAP: Record<string, string> = {
     'XLE': 'https://logo.clearbit.com/ssga.com',
     'XLF': 'https://logo.clearbit.com/ssga.com',
     'XLK': 'https://logo.clearbit.com/ssga.com',
+    
     // iShares (BlackRock)
     'IVV': 'https://logo.clearbit.com/ishares.com',
     'EEM': 'https://logo.clearbit.com/ishares.com',
     'TLT': 'https://logo.clearbit.com/ishares.com',
     'IWM': 'https://logo.clearbit.com/ishares.com',
+    'AGG': 'https://logo.clearbit.com/ishares.com',
+    'SLV': 'https://logo.clearbit.com/ishares.com',
+    
     // Others
     'SCHD': 'https://logo.clearbit.com/schwab.com',
     'JEPI': 'https://logo.clearbit.com/jpmorgan.com',
@@ -171,6 +182,8 @@ const resolveLogo = (ticker: string, name: string): string => {
     if (lowerName.includes('schwab')) return 'https://logo.clearbit.com/schwab.com';
     if (lowerName.includes('ark ')) return 'https://logo.clearbit.com/ark-invest.com';
     if (lowerName.includes('global x')) return 'https://logo.clearbit.com/globalxetfs.com';
+    if (lowerName.includes('vaneck')) return 'https://logo.clearbit.com/vaneck.com';
+    if (lowerName.includes('proshares')) return 'https://logo.clearbit.com/proshares.com';
 
     let domain = ticker.includes('.SA') ? `${t.toLowerCase()}.com.br` : `${t.toLowerCase()}.com`;
     return `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
