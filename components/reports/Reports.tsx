@@ -1,4 +1,5 @@
 
+
 import React, { useMemo, useState, useEffect } from 'react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { Card, CardHeader, CardContent } from '../ui/Card';
@@ -212,7 +213,7 @@ const Reports: React.FC = () => {
                 <CardHeader className="flex items-center gap-2 border-brand-border/30">
                     <div className="p-2 bg-brand-primary/10 rounded-lg text-brand-primary">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+                            <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
                         </svg>
                     </div>
                     {t('monthlyEvolution')} (Valor Aplicado + Ganho de Capital)

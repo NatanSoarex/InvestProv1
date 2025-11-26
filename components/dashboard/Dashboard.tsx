@@ -80,7 +80,7 @@ const RecentActivity: React.FC<{ transactions: Transaction[]; formatFn: (val: nu
 type TimeRange = '1D' | '5D' | '1M' | '6M' | 'YTD' | '1Y' | 'ALL';
 
 const Dashboard: React.FC = () => {
-  const { totalValue, totalInvested, totalGainLoss, totalGainLossPercent, transactions, holdings, fxRate, formatDisplayValue, settings, t } = usePortfolio();
+  const { totalValue, totalInvested, totalGainLoss, totalGainLossPercent, transactions, holdings, fxRate, formatDisplayValue, settings, t, lastUpdated } = usePortfolio();
   const { currentUser } = useAuth();
   const [portfolioHistory, setPortfolioHistory] = useState<HistoricalDataPoint[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
@@ -99,6 +99,7 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     const fetchHistory = async () => {
+      // Even if no transactions, we might want to show an empty graph or 0-line
       if (transactions.length === 0) {
         setIsHistoryLoading(false);
         setPortfolioHistory([]);
@@ -106,7 +107,7 @@ const Dashboard: React.FC = () => {
       };
       
       try {
-        // Uses SNAPSHOT MODE (Current Holdings applied to past) to ensure "Up and Down" wave visualization
+        // Passing currentQuotesMap ensures the graph ends at the exact current value
         const historyData = await financialApi.getPortfolioPriceHistory(transactions, fxRate, selectedRange, currentQuotesMap);
         setPortfolioHistory(historyData);
       } catch (e) {
@@ -118,7 +119,8 @@ const Dashboard: React.FC = () => {
 
     fetchHistory();
     
-  }, [transactions, fxRate, selectedRange, currentQuotesMap]);
+    // TRIGGER UPDATE WHEN lastUpdated CHANGES (Every 30s)
+  }, [transactions, fxRate, selectedRange, lastUpdated, currentQuotesMap]);
 
   const displayHistory = portfolioHistory.map(p => ({
       ...p,
@@ -129,7 +131,6 @@ const Dashboard: React.FC = () => {
       try {
           const d = new Date(val);
           if (selectedRange === '1D') {
-              // Clean Hour Display (e.g., 10:00, 14:00)
               return d.toLocaleTimeString(settings.language, { hour: '2-digit', minute: '2-digit' });
           }
           if (selectedRange === '5D' || selectedRange === '1M') {

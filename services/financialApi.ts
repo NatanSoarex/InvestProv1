@@ -2,7 +2,7 @@
 import { Asset, Quote, AssetClass, HistoricalDataPoint, Transaction, MarketState } from '../types';
 
 // ============================================================================
-// PROVEST FINANCIAL ENGINE 12.0 (STABLE SNAPSHOT)
+// PROVEST FINANCIAL ENGINE 13.0 (HIGH VOLATILITY CHART)
 // ============================================================================
 
 // --- Endpoints ---
@@ -26,7 +26,7 @@ const PROXIES = [
 // --- Cache Configuration ---
 const CACHE_TTL = {
     QUOTE: 10 * 1000,       
-    HISTORY: 2 * 60 * 1000, // Cache curto para histórico para parecer "vivo"
+    HISTORY: 2 * 60 * 1000, 
     ASSET: 24 * 60 * 60 * 1000 
 };
 
@@ -133,7 +133,6 @@ const getCryptoMapping = (ticker: string) => {
 };
 
 const calculateFallbackMetrics = (quote: Quote): Quote => {
-    // Força o cálculo matemático se a API retornar 0% mas houver diferença de preço
     if ((quote.change === 0 || quote.changePercent === 0) && quote.price > 0 && quote.previousClose > 0) {
         const diff = quote.price - quote.previousClose;
         if (Math.abs(diff) > 0.0000001) {
@@ -362,17 +361,15 @@ export const financialApi = {
             const { symbol, type } = normalizeTicker(rawTicker);
             let quote: Quote | null = null;
 
-            // PRIORITY HUNTER: Tenta múltiplas fontes até achar variação válida
             if (type === 'CRYPTO') {
                 const sources = [providers.binance, providers.coincap, providers.kucoin, providers.coingecko, providers.yahoo];
                 for (const provider of sources) {
                     const q = await provider(type === 'CRYPTO' && provider === providers.yahoo ? `${symbol}-USD` : symbol);
                     if (q) {
-                        // Se a fonte tiver variação diferente de zero, ACEITA IMEDIATAMENTE (é a melhor fonte)
                         if (Math.abs(q.changePercent) > 0.00001) {
                             quote = q; break; 
                         } else if (!quote) {
-                            quote = q; // Guarda a primeira fonte (mesmo que zerada) como fallback
+                            quote = q; 
                         }
                     }
                 }
@@ -387,7 +384,6 @@ export const financialApi = {
             }
 
             if (quote) {
-                // MATH GUARD: Última tentativa de salvar a porcentagem via cálculo manual
                 if (Math.abs(quote.changePercent) < 0.00001 && quote.price > 0 && quote.previousClose > 0) {
                     const diff = quote.price - quote.previousClose;
                     quote.change = diff;
@@ -411,8 +407,8 @@ export const financialApi = {
         return 5.25; 
     },
 
-    // --- DASHBOARD HISTORY ENGINE (SNAPSHOT MODE) ---
-    // Restaurado para garantir o gráfico "Sobe e Desce" que acompanha o mercado
+    // --- DASHBOARD HISTORY ENGINE (HIGH VOLATILITY MODE) ---
+    // Using 5m intervals for 1D to show the jagged 'Up and Down' line
     getPortfolioPriceHistory: async (
         transactions: Transaction[], 
         fxRate: number, 
@@ -426,14 +422,14 @@ export const financialApi = {
         let interval = '1d';
         
         if (range === '1D') {
-            startTime.setHours(0, 0, 0, 0); // Meia-noite de hoje
-            interval = '2m'; // Alta resolução para ver o "Sobe e Desce"
+            startTime.setHours(0, 0, 0, 0); 
+            interval = '5m'; // High Granularity for 1D
         } else if (range === '5D') {
             startTime.setDate(now.getDate() - 5);
-            interval = '60m';
+            interval = '15m';
         } else if (range === '1M') {
             startTime.setMonth(now.getMonth() - 1);
-            interval = '90m';
+            interval = '60m';
         } else {
             startTime.setFullYear(now.getFullYear() - 1);
             interval = '1d';
@@ -462,32 +458,31 @@ export const financialApi = {
             } catch (e) {}
         }));
 
-        // 2. Snapshot Mode: Assume current holdings for the entire period
-        // This creates a continuous trend line showing market performance
+        // 2. Snapshot Mode: Apply CURRENT holdings to historical prices
         const currentHoldings: Record<string, number> = {};
         transactions.forEach(tx => {
             currentHoldings[tx.ticker] = (currentHoldings[tx.ticker] || 0) + tx.quantity;
         });
 
-        // 3. Generate Master Timeline
+        // 3. Generate Timeline
         let timeline: number[] = [];
         const timestamps = Object.values(assetHistoryMap).flatMap(h => h.timestamp);
         if (timestamps.length > 0) {
             timeline = Array.from(new Set(timestamps)).sort((a, b) => a - b);
         } 
         
-        // Fallback for 1D if API empty (e.g. early morning or closed market)
-        if (timeline.length < 2 && range === '1D') {
+        // If we have no data points (e.g. market closed, API empty), generate a synthetic timeline
+        if (timeline.length < 5 && range === '1D') {
             const start = Math.floor(startTime.getTime() / 1000);
             const end = Math.floor(now.getTime() / 1000);
-            const step = (end - start) / 24; // 1 point per hour fallback
-            for(let i=0; i<=24; i++) timeline.push(Math.floor(start + (i * step)));
+            const points = 100; // Generate 100 points for smooth curve
+            const step = (end - start) / points; 
+            for(let i=0; i<=points; i++) timeline.push(Math.floor(start + (i * step)));
         }
 
         const resultData: HistoricalDataPoint[] = [];
         const lastKnownPrices: Record<string, number> = {};
 
-        // Init with current quotes as baseline
         if (currentQuotes) {
             Object.keys(currentQuotes).forEach(k => {
                 if (currentQuotes[k]?.price) lastKnownPrices[k] = currentQuotes[k].price;
@@ -505,13 +500,13 @@ export const financialApi = {
                 const history = assetHistoryMap[ticker];
                 
                 if (history) {
-                    // Find closest timestamp in history for this asset
-                    const idx = history.timestamp.findIndex(t => Math.abs(t - ts) < 300);
+                    // Find closest timestamp
+                    const idx = history.timestamp.findIndex(t => Math.abs(t - ts) < 600); // 10 min buffer
                     if (idx !== -1 && history.close[idx]) {
                         price = history.close[idx];
                         lastKnownPrices[ticker] = price;
                     } else {
-                        price = lastKnownPrices[ticker] || 0; // Fill forward
+                        price = lastKnownPrices[ticker] || 0; 
                     }
                 } else {
                     price = lastKnownPrices[ticker] || 0;
@@ -525,14 +520,15 @@ export const financialApi = {
                 }
             });
 
-            resultData.push({
-                date: new Date(ts * 1000).toISOString(),
-                price: portfolioValue
-            });
+            if (portfolioValue > 0) {
+                resultData.push({
+                    date: new Date(ts * 1000).toISOString(),
+                    price: portfolioValue
+                });
+            }
         });
 
-        // 4. Force Snap to Current Live Value
-        // Ensures the graph end matches the big number at the top
+        // 4. Force Snap to Current Live Value (The 30s Update Hook)
         if (currentQuotes) {
             let liveValue = 0;
             Object.keys(currentHoldings).forEach(t => {
@@ -544,12 +540,8 @@ export const financialApi = {
                 }
             });
             
-            if (resultData.length > 0) {
-                resultData[resultData.length - 1].price = liveValue;
-                resultData[resultData.length - 1].date = now.toISOString();
-            } else {
-                resultData.push({ date: now.toISOString(), price: liveValue });
-            }
+            // Append live value as the absolute final point
+            resultData.push({ date: now.toISOString(), price: liveValue });
         }
 
         return resultData;
