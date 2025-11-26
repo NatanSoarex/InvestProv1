@@ -1,4 +1,5 @@
 
+
 import React, { useMemo, useState, useEffect } from 'react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { Card, CardHeader, CardContent } from '../ui/Card';
@@ -7,9 +8,25 @@ import { Holding } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { financialApi } from '../../services/financialApi';
 
-const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
+const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1', '#14B8A6'];
 
-// Donut Chart with Central Text
+// Custom Tooltip for Donut Chart
+const CustomPieTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+        return (
+            <div className="bg-[#161B22] border border-[#30363D] p-3 rounded-lg shadow-xl">
+                <p className="font-bold text-white mb-1">{payload[0].name}</p>
+                <p className="text-brand-primary font-mono">{formatCurrency(payload[0].value, 'USD')}</p>
+                <p className="text-xs text-brand-secondary mt-1">
+                    {payload[0].payload.percent ? (payload[0].payload.percent * 100).toFixed(2) + '%' : ''}
+                </p>
+            </div>
+        );
+    }
+    return null;
+};
+
+// Donut Chart with Central Text (Investidor 10 Style)
 const AssetAllocation: React.FC<{ holdings: Holding[], noDataText: string }> = ({ holdings, noDataText }) => {
     const { formatDisplayValue, totalValue } = usePortfolio();
     
@@ -29,7 +46,7 @@ const AssetAllocation: React.FC<{ holdings: Holding[], noDataText: string }> = (
                         data={data}
                         cx="50%"
                         cy="50%"
-                        innerRadius={80} // Donut Style
+                        innerRadius={80} // Donut Hole
                         outerRadius={110}
                         paddingAngle={2}
                         dataKey="value"
@@ -40,12 +57,8 @@ const AssetAllocation: React.FC<{ holdings: Holding[], noDataText: string }> = (
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                     </Pie>
-                    <Tooltip 
-                        contentStyle={{ backgroundColor: '#161B22', border: '1px solid #30363D', borderRadius: '0.5rem', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)' }}
-                        itemStyle={{ color: '#C9D1D9', fontWeight: 600 }}
-                        formatter={(value) => formatCurrency(value as number, 'USD')} 
-                    />
-                    <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                    <Tooltip content={<CustomPieTooltip />} />
+                    <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px', color: '#8B949E' }} />
                 </PieChart>
             </ResponsiveContainer>
             {/* Central Text Overlay */}
@@ -61,19 +74,19 @@ const TopPerformers: React.FC<{ holdings: Holding[] }> = ({ holdings }) => {
      const sortedHoldings = [...holdings].sort((a,b) => b.totalGainLossUSD - a.totalGainLossUSD);
 
     return (
-        <div>
+        <div className="flex flex-col gap-2">
             {sortedHoldings.slice(0, 5).map(h => {
                 const gainInUSD = h.totalGainLossUSD;
                 return (
-                    <div key={h.asset.ticker} className="flex justify-between items-center py-3 border-b border-brand-border last:border-b-0">
+                    <div key={h.asset.ticker} className="flex justify-between items-center p-3 bg-brand-bg/30 rounded-lg border border-brand-border/50">
                         <div className="flex items-center gap-3">
                             <img src={h.asset.logo} className="w-8 h-8 rounded-full bg-brand-surface object-cover border border-brand-border" alt="" onError={(e) => e.currentTarget.src=`https://ui-avatars.com/api/?name=${h.asset.ticker}&background=30363D&color=C9D1D9`}/>
                             <div>
-                                <p className="font-bold text-brand-text">{h.asset.ticker}</p>
+                                <p className="font-bold text-brand-text text-sm">{h.asset.ticker}</p>
                                 <p className="text-[10px] text-brand-secondary uppercase">{h.asset.assetClass}</p>
                             </div>
                         </div>
-                        <div className={`font-bold text-sm ${gainInUSD >= 0 ? 'text-brand-success' : 'text-brand-danger'}`}>
+                        <div className={`font-bold text-sm font-mono ${gainInUSD >= 0 ? 'text-brand-success' : 'text-brand-danger'}`}>
                             {gainInUSD > 0 ? '+' : ''}{formatCurrency(gainInUSD, 'USD')}
                         </div>
                     </div>
@@ -117,12 +130,25 @@ const Reports: React.FC = () => {
             
             // Prepare data for Stacked Bar (Invested + Gain)
             const finalData = sortedMonths.map((month: any) => {
+                // Investidor 10 Style: 
+                // Bar Bottom = Invested Amount (Valor Aplicado)
+                // Bar Top = Capital Gain (Profit)
+                // If Loss, we visually just show the Balance (as Invested > Balance) or we clamp Gain to 0.
                 const gain = month.balance - month.invested;
+                
+                // Logic for visual stacking:
+                // If Gain > 0: Base=Invested, Top=Gain
+                // If Gain < 0: We show Invested (as total bar height) but visually it's tricky in a simple stack.
+                // To keep it simple and matching the "Green/LightGreen" style of I10:
+                // We show Invested and Gain (if positive).
+                
                 return {
                     ...month,
-                    gain: gain > 0 ? gain : 0, // If negative, we handle differently or clip for stacked viz
+                    gain: gain > 0 ? gain : 0, 
                     investedBar: month.invested,
-                    fullBalance: month.balance // For tooltip
+                    // If negative, the 'balance' is less than invested.
+                    // We can't easily show negative stack on top of positive in this chart type without complex logic.
+                    // So we stick to positive gain visualization.
                 };
             });
 
@@ -142,19 +168,19 @@ const Reports: React.FC = () => {
             
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card className="border-l-4 border-l-brand-secondary">
+                <Card className="border-l-4 border-l-brand-secondary bg-brand-surface/50">
                     <CardContent>
                         <div className="text-xs font-bold uppercase text-brand-secondary tracking-wider">{t('totalInvested')}</div>
                         <div className="text-2xl font-bold text-brand-text mt-1">{formatDisplayValue(totalInvested)}</div>
                     </CardContent>
                 </Card>
-                <Card className="border-l-4 border-l-brand-primary">
+                <Card className="border-l-4 border-l-brand-primary bg-brand-surface/50">
                     <CardContent>
                         <div className="text-xs font-bold uppercase text-brand-secondary tracking-wider">{t('finalBalance')}</div>
                         <div className="text-2xl font-bold text-brand-primary mt-1">{formatDisplayValue(totalValue)}</div>
                     </CardContent>
                 </Card>
-                <Card className={`border-l-4 ${totalGainLoss >= 0 ? 'border-l-brand-success' : 'border-l-brand-danger'}`}>
+                <Card className={`border-l-4 bg-brand-surface/50 ${totalGainLoss >= 0 ? 'border-l-brand-success' : 'border-l-brand-danger'}`}>
                     <CardContent>
                         <div className="text-xs font-bold uppercase text-brand-secondary tracking-wider">{t('monthlyYield')} (Total)</div>
                         <div className={`text-2xl font-bold mt-1 ${totalGainLoss >= 0 ? 'text-brand-success' : 'text-brand-danger'}`}>
@@ -164,12 +190,14 @@ const Reports: React.FC = () => {
                 </Card>
             </div>
 
-            {/* MAIN CHART: Stacked Bar (Investidor 10 Style) */}
+            {/* MAIN CHART: Stacked Bar (Investidor 10 Style - Escadinha) */}
             <Card className="bg-brand-surface border-brand-border">
                 <CardHeader className="flex items-center gap-2 border-brand-border/30">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-brand-primary" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
-                    </svg>
+                    <div className="p-2 bg-brand-primary/10 rounded-lg text-brand-primary">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+                        </svg>
+                    </div>
                     {t('monthlyEvolution')}
                 </CardHeader>
                 <CardContent className="h-[400px]">
@@ -199,24 +227,26 @@ const Reports: React.FC = () => {
                                     formatter={(value: number, name: string) => [formatCurrency(value, 'USD'), name]}
                                     labelStyle={{ color: '#8B949E', marginBottom: '5px' }}
                                 />
-                                <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px', fontWeight: 500 }} />
+                                <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px', fontWeight: 500, color: '#C9D1D9' }} />
                                 
-                                {/* Stacked Bars */}
+                                {/* Stacked Bars for "Escadinha" Effect */}
                                 <Bar 
                                     dataKey="investedBar" 
                                     name={t('appliedValue')} 
                                     stackId="a" 
-                                    fill="#10B981"  // Darker Green (Base)
+                                    fill="#10B981"  // Dark Green (Valor Aplicado)
                                     radius={[0, 0, 0, 0]} 
                                     barSize={24} 
+                                    animationDuration={1500}
                                 />
                                 <Bar 
                                     dataKey="gain" 
                                     name={t('capitalGain')} 
                                     stackId="a" 
-                                    fill="#6EE7B7" // Lighter Green (Top)
+                                    fill="#6EE7B7" // Light Green (Ganho de Capital)
                                     radius={[4, 4, 0, 0]} 
                                     barSize={24} 
+                                    animationDuration={1500}
                                 />
                                 
                             </BarChart>
@@ -235,13 +265,13 @@ const Reports: React.FC = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                  <Card className="lg:col-span-2 border-brand-border">
-                    <CardHeader>{t('allocationByClass')}</CardHeader>
+                    <CardHeader className="border-brand-border/30">{t('allocationByClass')}</CardHeader>
                     <CardContent className="h-80 flex items-center justify-center">
                         <AssetAllocation holdings={holdings} noDataText={t('noData')} />
                     </CardContent>
                 </Card>
                 <Card className="border-brand-border">
-                    <CardHeader>{t('topPerformers')}</CardHeader>
+                    <CardHeader className="border-brand-border/30">{t('topPerformers')}</CardHeader>
                     <CardContent>
                          {holdings.length > 0 ? <TopPerformers holdings={holdings} /> : <div className="text-center p-8 text-brand-secondary">{t('noData')}</div>}
                     </CardContent>

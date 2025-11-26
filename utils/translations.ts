@@ -232,7 +232,7 @@ export const translations = {
     monthlyEvolution: 'Wealth Evolution',
     monthlyContribution: 'Monthly Contrib.',
     monthlyYield: 'Accum. Yield',
-    accumulatedInvested: 'Total Investido',
+    accumulatedInvested: 'Total Invested',
     finalBalance: 'Net Worth',
     estimatedDividends: 'Est. Div. Yield',
     bestMonth: 'Best Month (Net Worth)',
