@@ -1,5 +1,4 @@
 
-
 import React, { useMemo, useState, useEffect } from 'react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { Card, CardHeader, CardContent } from '../ui/Card';
@@ -101,7 +100,7 @@ const Reports: React.FC = () => {
     const [monthlyData, setMonthlyData] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    // 1. Calculate Monthly Evolution (Staircase Style: Invested vs Gain)
+    // 1. Calculate Monthly Evolution (Investidor 10 Style: Stacked Bars)
     useEffect(() => {
         const processHistory = async () => {
             if (transactions.length === 0) {
@@ -128,27 +127,14 @@ const Reports: React.FC = () => {
 
             const sortedMonths = Object.values(grouped).sort((a: any, b: any) => a.timestamp - b.timestamp);
             
-            // Prepare data for Stacked Bar (Invested + Gain)
+            // Prepare data for Stacked Bar (Investidor 10)
             const finalData = sortedMonths.map((month: any) => {
-                // Investidor 10 Style: 
-                // Bar Bottom = Invested Amount (Valor Aplicado)
-                // Bar Top = Capital Gain (Profit)
-                // If Loss, we visually just show the Balance (as Invested > Balance) or we clamp Gain to 0.
                 const gain = month.balance - month.invested;
-                
-                // Logic for visual stacking:
-                // If Gain > 0: Base=Invested, Top=Gain
-                // If Gain < 0: We show Invested (as total bar height) but visually it's tricky in a simple stack.
-                // To keep it simple and matching the "Green/LightGreen" style of I10:
-                // We show Invested and Gain (if positive).
                 
                 return {
                     ...month,
                     gain: gain > 0 ? gain : 0, 
                     investedBar: month.invested,
-                    // If negative, the 'balance' is less than invested.
-                    // We can't easily show negative stack on top of positive in this chart type without complex logic.
-                    // So we stick to positive gain visualization.
                 };
             });
 
@@ -190,7 +176,7 @@ const Reports: React.FC = () => {
                 </Card>
             </div>
 
-            {/* MAIN CHART: Stacked Bar (Investidor 10 Style - Escadinha) */}
+            {/* MAIN CHART: Stacked Bar (Investidor 10 Style - Escadinha Empilhada) */}
             <Card className="bg-brand-surface border-brand-border">
                 <CardHeader className="flex items-center gap-2 border-brand-border/30">
                     <div className="p-2 bg-brand-primary/10 rounded-lg text-brand-primary">
@@ -229,14 +215,14 @@ const Reports: React.FC = () => {
                                 />
                                 <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px', fontWeight: 500, color: '#C9D1D9' }} />
                                 
-                                {/* Stacked Bars for "Escadinha" Effect */}
+                                {/* Stacked Bars */}
                                 <Bar 
                                     dataKey="investedBar" 
                                     name={t('appliedValue')} 
                                     stackId="a" 
                                     fill="#10B981"  // Dark Green (Valor Aplicado)
                                     radius={[0, 0, 0, 0]} 
-                                    barSize={24} 
+                                    barSize={30} 
                                     animationDuration={1500}
                                 />
                                 <Bar 
@@ -245,7 +231,7 @@ const Reports: React.FC = () => {
                                     stackId="a" 
                                     fill="#6EE7B7" // Light Green (Ganho de Capital)
                                     radius={[4, 4, 0, 0]} 
-                                    barSize={24} 
+                                    barSize={30} 
                                     animationDuration={1500}
                                 />
                                 

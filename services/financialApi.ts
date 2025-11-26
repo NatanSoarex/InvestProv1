@@ -584,7 +584,6 @@ export const financialApi = {
                 for (const provider of cryptoSources) {
                     const q = await provider(type === 'CRYPTO' && provider === providers.yahoo ? `${symbol}-USD` : symbol);
                     if (q) {
-                        // Aggressive hunting: only accept if change is not 0, or if it's the last resort
                         if (Math.abs(q.changePercent) > 0.00001 || provider === providers.coinbase) {
                             quote = q;
                             if (Math.abs(q.changePercent) > 0.00001) break;
@@ -686,20 +685,20 @@ export const financialApi = {
         const now = new Date();
         let startTime = new Date();
         let interval = '1d';
-        let intervalMs = 24 * 60 * 60 * 1000;
+        // let intervalMs = 24 * 60 * 60 * 1000; // Not used in loop anymore, we use timestamps from API
         
+        // REFINED INTRADAY LOGIC FOR "UP AND DOWN" CHART
         if (range === '1D') {
+            // Start from 00:00 today
             startTime.setHours(0, 0, 0, 0); 
-            interval = '5m';
-            intervalMs = 5 * 60 * 1000;
+            // Use 2m interval for high granularity (wavy lines)
+            interval = '2m';
         } else if (range === '5D') {
             startTime.setDate(now.getDate() - 5);
             interval = '60m';
-            intervalMs = 60 * 60 * 1000;
         } else if (range === '1M') {
             startTime.setMonth(now.getMonth() - 1);
             interval = '90m';
-            intervalMs = 90 * 60 * 1000;
         } else {
             startTime.setFullYear(now.getFullYear() - 1);
             interval = '1d';
@@ -711,6 +710,7 @@ export const financialApi = {
         const uniqueTickers = Array.from(new Set(transactions.map(t => t.ticker)));
         const assetHistoryMap: Record<string, { timestamp: number[], close: number[] }> = {};
 
+        // 1. Fetch History for all assets in range
         await Promise.all(uniqueTickers.map(async (ticker) => {
             const { symbol, type } = normalizeTicker(ticker);
             const apiSymbol = type === 'CRYPTO' ? `${symbol}-USD` : symbol;
@@ -727,70 +727,58 @@ export const financialApi = {
             } catch (e) {}
         }));
 
-        // Generate Clean Timeline (Linear)
-        const resultData: HistoricalDataPoint[] = [];
-        const startTs = startTime.getTime();
-        const endTs = now.getTime();
-        
-        // Sort transactions
-        const sortedTx = [...transactions].sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
-        const lastPrices: Record<string, number> = {};
+        // 2. CALCULATE SNAPSHOT HOLDINGS (Pro-Forma)
+        const currentHoldings: Record<string, number> = {};
+        let currentInvestedTotal = 0;
 
-        // Pre-fill lastPrices with current quotes to allow fill-back if history starts late
+        transactions.forEach(tx => {
+            currentHoldings[tx.ticker] = (currentHoldings[tx.ticker] || 0) + tx.quantity;
+            let cost = tx.totalCost;
+            const { type } = normalizeTicker(tx.ticker);
+            if (type === 'BR' && fxRate > 0) cost = cost / fxRate;
+            currentInvestedTotal += cost;
+        });
+
+        // 3. Generate Master Timeline
+        // We merge all timestamps from all assets to create a unified timeline
+        const allTimestamps = new Set<number>();
+        Object.values(assetHistoryMap).forEach(h => h.timestamp.forEach(t => allTimestamps.add(t)));
+        const sortedTimeline = Array.from(allTimestamps).sort((a, b) => a - b);
+
+        const resultData: HistoricalDataPoint[] = [];
+        const lastKnownPrices: Record<string, number> = {};
+
+        // Initialize last known prices with current quotes if available (fill-back)
         if (currentQuotes) {
             Object.keys(currentQuotes).forEach(k => {
-                lastPrices[k] = currentQuotes[k].price;
+                if (currentQuotes[k]?.price) lastKnownPrices[k] = currentQuotes[k].price;
             });
         }
 
-        for (let t = startTs; t <= endTs; t += intervalMs) {
-            const currentDate = new Date(t);
-            
-            // 1. Calculate Holdings & Investment at this specific time
-            let investedInUSD = 0;
-            const holdingsAtTime: Record<string, number> = {};
-
-            for (const tx of sortedTx) {
-                const txDate = new Date(tx.dateTime);
-                if (txDate.getTime() <= currentDate.getTime()) {
-                    holdingsAtTime[tx.ticker] = (holdingsAtTime[tx.ticker] || 0) + tx.quantity;
-                    
-                    const { type } = normalizeTicker(tx.ticker);
-                    let cost = tx.totalCost;
-                    if (type === 'BR' && fxRate > 0) cost = cost / fxRate;
-                    investedInUSD += cost;
-                }
-            }
-
-            // 2. Calculate Market Value
+        sortedTimeline.forEach(ts => {
             let portfolioValue = 0;
-            let hasActiveAssets = false;
+            let hasDataForTick = false;
 
-            Object.keys(holdingsAtTime).forEach(ticker => {
-                const qty = holdingsAtTime[ticker];
-                if (qty > 0) hasActiveAssets = true;
+            Object.keys(currentHoldings).forEach(ticker => {
+                const qty = currentHoldings[ticker];
+                if (qty <= 0) return;
 
-                // Find Price
                 const history = assetHistoryMap[ticker];
                 let price = 0;
-                const tsSec = Math.floor(t / 1000);
 
                 if (history) {
-                    // Find price at or before this timestamp
-                    let foundIdx = -1;
-                    for(let i = 0; i < history.timestamp.length; i++) {
-                        if (history.timestamp[i] > tsSec) break;
-                        if (history.close[i]) foundIdx = i;
+                    // Find exact match or update last known
+                    const idx = history.timestamp.indexOf(ts);
+                    if (idx !== -1 && history.close[idx] !== null) {
+                        price = history.close[idx];
+                        lastKnownPrices[ticker] = price;
+                        hasDataForTick = true;
+                    } else {
+                        // Fill forward
+                        price = lastKnownPrices[ticker] || 0;
                     }
-                    
-                    if (foundIdx !== -1) {
-                        price = history.close[foundIdx];
-                        lastPrices[ticker] = price;
-                    } else if (lastPrices[ticker]) {
-                        price = lastPrices[ticker]; // Forward fill
-                    }
-                } else if (currentQuotes && currentQuotes[ticker]) {
-                    price = currentQuotes[ticker].price; // Fallback to current
+                } else {
+                    price = lastKnownPrices[ticker] || 0;
                 }
 
                 if (price > 0) {
@@ -801,29 +789,18 @@ export const financialApi = {
                 }
             });
 
-            if (hasActiveAssets) {
-                resultData.push({
-                    date: currentDate.toISOString(),
+            if (hasDataForTick || range === '1D') {
+                 resultData.push({
+                    date: new Date(ts * 1000).toISOString(),
                     price: portfolioValue,
-                    invested: investedInUSD
+                    invested: currentInvestedTotal
                 });
             }
-        }
+        });
 
-        // Force Snap to Live Value at end
-        if (resultData.length > 0 && currentQuotes) {
+        // 4. Force Snap to Current Live Value (Convergence)
+        if (currentQuotes && resultData.length > 0) {
             let liveValue = 0;
-            let liveInvested = 0;
-            const currentHoldings: Record<string, number> = {};
-            
-            sortedTx.forEach(tx => {
-                currentHoldings[tx.ticker] = (currentHoldings[tx.ticker] || 0) + tx.quantity;
-                let cost = tx.totalCost;
-                const { type } = normalizeTicker(tx.ticker);
-                if (type === 'BR' && fxRate > 0) cost = cost / fxRate;
-                liveInvested += cost;
-            });
-
             Object.keys(currentHoldings).forEach(t => {
                 if (currentQuotes[t]) {
                     const { type } = normalizeTicker(t);
@@ -832,18 +809,10 @@ export const financialApi = {
                     liveValue += val;
                 }
             });
-
-            // Replace last point or add new one
-            const lastPoint = resultData[resultData.length - 1];
-            if (Math.abs(new Date(lastPoint.date).getTime() - now.getTime()) < intervalMs) {
-                lastPoint.price = liveValue;
-                lastPoint.invested = liveInvested;
-            } else {
-                resultData.push({
-                    date: now.toISOString(),
-                    price: liveValue,
-                    invested: liveInvested
-                });
+            
+            const lastIdx = resultData.length - 1;
+            if (lastIdx >= 0) {
+                resultData[lastIdx].price = liveValue;
             }
         }
 

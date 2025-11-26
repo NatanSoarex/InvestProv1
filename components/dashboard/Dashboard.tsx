@@ -3,9 +3,9 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { Card, CardHeader, CardContent } from '../ui/Card';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { financialApi } from '../../services/financialApi';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency } from '../../utils/formatters';
 import { HistoricalDataPoint, Transaction, Quote } from '../../types';
 import { AdminPanel } from '../admin/AdminPanel';
 
@@ -59,7 +59,7 @@ const RecentActivity: React.FC<{ transactions: Transaction[]; formatFn: (val: nu
                             </div>
                             <div>
                                 <p className="font-bold text-brand-text text-sm">{t.ticker}</p>
-                                <p className="text-xs text-brand-secondary">{formatDate(t.dateTime).split(',')[0]}</p>
+                                <p className="text-xs text-brand-secondary">{formatCurrency(t.price, currency)}</p>
                             </div>
                         </div>
                         <div className="text-right">
@@ -106,6 +106,7 @@ const Dashboard: React.FC = () => {
       };
       
       try {
+        // The financialApi now uses Snapshot mode, so this history reflects current holdings applied to past prices
         const historyData = await financialApi.getPortfolioPriceHistory(transactions, fxRate, selectedRange, currentQuotesMap);
         setPortfolioHistory(historyData);
       } catch (e) {
@@ -122,12 +123,12 @@ const Dashboard: React.FC = () => {
   const displayHistory = portfolioHistory.map(p => ({
       ...p,
       price: settings.currency === 'BRL' ? p.price * fxRate : p.price,
-      invested: settings.currency === 'BRL' ? p.invested * fxRate : p.invested,
   }));
 
   const formatXAxis = (val: string) => {
       try {
           const d = new Date(val);
+          // INTRADAY FORMAT FIX
           if (selectedRange === '1D') {
               return d.toLocaleTimeString(settings.language, { hour: '2-digit', minute: '2-digit' });
           }
@@ -179,7 +180,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* DASHBOARD CHART: RESTORED TO AREA CHART (NEON STYLE) */}
+        {/* DASHBOARD CHART: NEON AREA CHART (TRENDING UP/DOWN) */}
         <Card className="lg:col-span-2 border-brand-border/50 bg-brand-surface/30 backdrop-blur-md">
             <CardHeader className="border-brand-border/30 flex flex-col sm:flex-row justify-between items-center pb-2 gap-4">
                 <span>{t('wealthEvolution')}</span>
@@ -272,7 +273,6 @@ const Dashboard: React.FC = () => {
                             cursor={{ stroke: '#58A6FF', strokeWidth: 1, strokeDasharray: '4 4' }}
                         />
                         
-                        {/* Primary Glow Area */}
                         <Area 
                             type="monotone" 
                             dataKey="price" 
