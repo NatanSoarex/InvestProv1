@@ -2,7 +2,7 @@
 import { Asset, Quote, AssetClass, HistoricalDataPoint, Transaction, MarketState } from '../types';
 
 // ============================================================================
-// PROVEST FINANCIAL ENGINE 11.5 (SNAPSHOT RESTORED)
+// PROVEST FINANCIAL ENGINE 12.0 (STABLE SNAPSHOT)
 // ============================================================================
 
 // --- Endpoints ---
@@ -11,9 +11,7 @@ const YAHOO_CHART_API = 'https://query2.finance.yahoo.com/v8/finance/chart';
 const YAHOO_SEARCH_URL = 'https://query2.finance.yahoo.com/v1/finance/search';
 const BRAPI_BASE_URL = 'https://brapi.dev/api'; 
 const BINANCE_API = 'https://api.binance.com/api/v3';
-const COINBASE_API = 'https://api.coinbase.com/v2';
 const COINGECKO_API = 'https://api.coingecko.com/api/v3';
-const STOOQ_BASE_URL = 'https://stooq.com/q/l';
 const AWESOMEAPI_BASE = 'https://economia.awesomeapi.com.br/json';
 const COINCAP_API = 'https://api.coincap.io/v2/assets';
 const KUCOIN_API = 'https://api.kucoin.com/api/v1/market/stats';
@@ -28,13 +26,12 @@ const PROXIES = [
 // --- Cache Configuration ---
 const CACHE_TTL = {
     QUOTE: 10 * 1000,       
-    HISTORY: 5 * 60 * 1000, 
+    HISTORY: 2 * 60 * 1000, // Cache curto para histórico para parecer "vivo"
     ASSET: 24 * 60 * 60 * 1000 
 };
 
 const cache = {
     quotes: {} as Record<string, { data: Quote, timestamp: number }>,
-    history: {} as Record<string, { data: HistoricalDataPoint[], timestamp: number }>,
     assets: {} as Record<string, Asset>,
 };
 
@@ -72,7 +69,7 @@ export const TOP_ASSETS_FALLBACK = [
 ];
 
 // --- Helpers ---
-const smartFetch = async (url: string, useProxy = true, timeoutMs = 2000, isCsv = false) => {
+const smartFetch = async (url: string, useProxy = true, timeoutMs = 2500) => {
     const separator = url.includes('?') ? '&' : '?';
     const bust = `_t=${Date.now()}`; 
     const finalUrl = `${url}${separator}${bust}`;
@@ -84,7 +81,6 @@ const smartFetch = async (url: string, useProxy = true, timeoutMs = 2000, isCsv 
             const response = await fetch(fetchUrl, { signal: controller.signal });
             clearTimeout(id);
             if (!response.ok) throw new Error(`Status: ${response.status}`);
-            if (isCsv) return await response.text();
             return await response.json();
         } catch (e) {
             clearTimeout(id);
@@ -132,11 +128,12 @@ const normalizeTicker = (ticker: string) => {
 const getCryptoMapping = (ticker: string) => {
     const t = ticker.replace('-USD', '').toUpperCase();
     const binanceSymbol = ['USDT', 'USDC'].includes(t) ? `${t}USDC` : `${t}USDT`;
-    const coinId = { 'BTC': 'bitcoin', 'ETH': 'ethereum', 'SOL': 'solana' }[t] || t.toLowerCase();
+    const coinId = { 'BTC': 'bitcoin', 'ETH': 'ethereum', 'SOL': 'solana', 'USDT': 'tether' }[t] || t.toLowerCase();
     return { binanceSymbol, coinId };
 };
 
 const calculateFallbackMetrics = (quote: Quote): Quote => {
+    // Força o cálculo matemático se a API retornar 0% mas houver diferença de preço
     if ((quote.change === 0 || quote.changePercent === 0) && quote.price > 0 && quote.previousClose > 0) {
         const diff = quote.price - quote.previousClose;
         if (Math.abs(diff) > 0.0000001) {
@@ -365,15 +362,18 @@ export const financialApi = {
             const { symbol, type } = normalizeTicker(rawTicker);
             let quote: Quote | null = null;
 
-            // PRIORITY: BINANCE -> COINCAP -> KUCOIN -> COINGECKO -> YAHOO
+            // PRIORITY HUNTER: Tenta múltiplas fontes até achar variação válida
             if (type === 'CRYPTO') {
                 const sources = [providers.binance, providers.coincap, providers.kucoin, providers.coingecko, providers.yahoo];
                 for (const provider of sources) {
                     const q = await provider(type === 'CRYPTO' && provider === providers.yahoo ? `${symbol}-USD` : symbol);
                     if (q) {
+                        // Se a fonte tiver variação diferente de zero, ACEITA IMEDIATAMENTE (é a melhor fonte)
                         if (Math.abs(q.changePercent) > 0.00001) {
                             quote = q; break; 
-                        } else if (!quote) quote = q;
+                        } else if (!quote) {
+                            quote = q; // Guarda a primeira fonte (mesmo que zerada) como fallback
+                        }
                     }
                 }
             } else if (type === 'BR') {
@@ -387,6 +387,7 @@ export const financialApi = {
             }
 
             if (quote) {
+                // MATH GUARD: Última tentativa de salvar a porcentagem via cálculo manual
                 if (Math.abs(quote.changePercent) < 0.00001 && quote.price > 0 && quote.previousClose > 0) {
                     const diff = quote.price - quote.previousClose;
                     quote.change = diff;
@@ -411,7 +412,7 @@ export const financialApi = {
     },
 
     // --- DASHBOARD HISTORY ENGINE (SNAPSHOT MODE) ---
-    // This restores the "Up and Down" market trend line for the dashboard
+    // Restaurado para garantir o gráfico "Sobe e Desce" que acompanha o mercado
     getPortfolioPriceHistory: async (
         transactions: Transaction[], 
         fxRate: number, 
@@ -425,8 +426,8 @@ export const financialApi = {
         let interval = '1d';
         
         if (range === '1D') {
-            startTime.setHours(0, 0, 0, 0); 
-            interval = '2m'; 
+            startTime.setHours(0, 0, 0, 0); // Meia-noite de hoje
+            interval = '2m'; // Alta resolução para ver o "Sobe e Desce"
         } else if (range === '5D') {
             startTime.setDate(now.getDate() - 5);
             interval = '60m';
@@ -461,32 +462,32 @@ export const financialApi = {
             } catch (e) {}
         }));
 
-        // 2. Calculate Current Holdings Snapshot (PROJECTED BACKWARDS)
-        // This ensures the graph shows the market trend of what you own NOW.
+        // 2. Snapshot Mode: Assume current holdings for the entire period
+        // This creates a continuous trend line showing market performance
         const currentHoldings: Record<string, number> = {};
         transactions.forEach(tx => {
             currentHoldings[tx.ticker] = (currentHoldings[tx.ticker] || 0) + tx.quantity;
         });
 
-        // 3. Timeline Generation
+        // 3. Generate Master Timeline
         let timeline: number[] = [];
         const timestamps = Object.values(assetHistoryMap).flatMap(h => h.timestamp);
         if (timestamps.length > 0) {
             timeline = Array.from(new Set(timestamps)).sort((a, b) => a - b);
         } 
         
-        // Fallback for 1D if API empty
+        // Fallback for 1D if API empty (e.g. early morning or closed market)
         if (timeline.length < 2 && range === '1D') {
             const start = Math.floor(startTime.getTime() / 1000);
             const end = Math.floor(now.getTime() / 1000);
-            const step = (end - start) / 20;
-            for(let i=0; i<=20; i++) timeline.push(Math.floor(start + (i * step)));
+            const step = (end - start) / 24; // 1 point per hour fallback
+            for(let i=0; i<=24; i++) timeline.push(Math.floor(start + (i * step)));
         }
 
         const resultData: HistoricalDataPoint[] = [];
         const lastKnownPrices: Record<string, number> = {};
 
-        // Init with current quotes
+        // Init with current quotes as baseline
         if (currentQuotes) {
             Object.keys(currentQuotes).forEach(k => {
                 if (currentQuotes[k]?.price) lastKnownPrices[k] = currentQuotes[k].price;
@@ -504,12 +505,13 @@ export const financialApi = {
                 const history = assetHistoryMap[ticker];
                 
                 if (history) {
+                    // Find closest timestamp in history for this asset
                     const idx = history.timestamp.findIndex(t => Math.abs(t - ts) < 300);
                     if (idx !== -1 && history.close[idx]) {
                         price = history.close[idx];
                         lastKnownPrices[ticker] = price;
                     } else {
-                        price = lastKnownPrices[ticker] || 0;
+                        price = lastKnownPrices[ticker] || 0; // Fill forward
                     }
                 } else {
                     price = lastKnownPrices[ticker] || 0;
@@ -529,7 +531,8 @@ export const financialApi = {
             });
         });
 
-        // 4. Snap to Live Net Worth (Convergence)
+        // 4. Force Snap to Current Live Value
+        // Ensures the graph end matches the big number at the top
         if (currentQuotes) {
             let liveValue = 0;
             Object.keys(currentHoldings).forEach(t => {
@@ -540,12 +543,12 @@ export const financialApi = {
                     liveValue += val;
                 }
             });
+            
             if (resultData.length > 0) {
                 resultData[resultData.length - 1].price = liveValue;
                 resultData[resultData.length - 1].date = now.toISOString();
             } else {
                 resultData.push({ date: now.toISOString(), price: liveValue });
-                resultData.unshift({ date: startTime.toISOString(), price: liveValue });
             }
         }
 

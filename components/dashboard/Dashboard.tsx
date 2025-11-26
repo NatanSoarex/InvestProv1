@@ -264,11 +264,13 @@ const Dashboard: React.FC = () => {
                                 } catch { return ''; }
                             }}
                             formatter={(value, name) => {
-                                const formatted = new Intl.NumberFormat(settings.language, { style: 'currency', currency: settings.currency }).format(value as number);
-                                return [
-                                    <span style={{ color: '#58A6FF', textShadow: '0 0 10px rgba(88,166,255,0.5)' }}>{formatted}</span>, 
-                                    <span style={{ color: '#C9D1D9' }}>{t('netWorth')}</span>
-                                ];
+                                try {
+                                    const formatted = new Intl.NumberFormat(settings.language, { style: 'currency', currency: settings.currency }).format(value as number);
+                                    return [
+                                        <span style={{ color: '#58A6FF', textShadow: '0 0 10px rgba(88,166,255,0.5)' }}>{formatted}</span>, 
+                                        <span style={{ color: '#C9D1D9' }}>{t('netWorth')}</span>
+                                    ];
+                                } catch { return [value, name]; }
                             }}
                             cursor={{ stroke: '#58A6FF', strokeWidth: 1, strokeDasharray: '4 4' }}
                         />
@@ -282,6 +284,7 @@ const Dashboard: React.FC = () => {
                             fill="url(#colorValue)"
                             animationDuration={1000} 
                             filter="drop-shadow(0 0 6px rgba(88, 166, 255, 0.4))"
+                            isAnimationActive={true}
                         />
                         </AreaChart>
                     </ResponsiveContainer>

@@ -106,34 +106,28 @@ const Reports: React.FC = () => {
                 return;
             }
 
-            // 1. Get Full Price History (Snapshot Mode for accuracy)
+            // 1. Get Full Price History
             const history = await financialApi.getPortfolioPriceHistory(transactions, fxRate, 'ALL');
             
             // 2. Calculate Monthly Data
             const groupedHistory: Record<string, any> = {};
             const contributionsByMonth: Record<string, number> = {};
             
-            // Aggregate transactions by month for "Invested" calculation
             transactions.forEach(tx => {
                 const date = new Date(tx.dateTime);
                 const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-                
-                // Normalization: Ensure we sum cost in USD base for consistency if asset is BRL
                 let cost = tx.totalCost;
                 if (tx.ticker.endsWith('.SA') && fxRate > 0) cost = cost / fxRate;
-
                 if (!contributionsByMonth[key]) contributionsByMonth[key] = 0;
                 contributionsByMonth[key] += cost;
             });
 
-            // Group history points by month
             history.forEach(point => {
                 const date = new Date(point.date);
                 const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-                
                 groupedHistory[key] = {
                     dateKey: key,
-                    netWorth: point.price, // Last known value of the month
+                    netWorth: point.price, 
                     displayDate: date.toLocaleDateString(settings.language, { month: 'short', year: '2-digit' })
                 };
             });
@@ -149,13 +143,9 @@ const Reports: React.FC = () => {
                 const historyPoint = groupedHistory[key] || {};
                 const netWorth = historyPoint.netWorth || runningInvested;
                 
-                // Logic for Stacked Bar:
-                // Invested (Base) = runningInvested
-                // Gain (Top) = netWorth - runningInvested (if positive)
-                // If netWorth < invested, we show Invested as full bar? 
-                // Standard Investidor 10 style: 
-                // Bar 1: Valor Aplicado
-                // Bar 2: Ganho de Capital (Stacked)
+                // STACKED BAR LOGIC (Investidor 10 Style)
+                // Base: Invested Amount
+                // Top: Capital Gain (if positive)
                 
                 let investedBar = runningInvested;
                 let gainBar = 0;
@@ -163,6 +153,7 @@ const Reports: React.FC = () => {
                 if (netWorth > runningInvested) {
                     gainBar = netWorth - runningInvested;
                 } 
+                // Note: If netWorth < invested, the gainBar is 0, and InvestedBar shows full amount (loss is implied by area not reaching top, or we could adjust investedBar to show loss, but Investidor 10 usually stacks gain on top).
                 
                 return {
                     dateKey: key,
@@ -173,7 +164,6 @@ const Reports: React.FC = () => {
                 };
             });
 
-            // Filter out empty months at start
             const firstNonZeroIndex = finalData.findIndex(d => d.totalValue > 0);
             const trimmedData = firstNonZeroIndex >= 0 ? finalData.slice(firstNonZeroIndex) : [];
 
@@ -214,15 +204,15 @@ const Reports: React.FC = () => {
                 </Card>
             </div>
 
-            {/* CHART: Evolução Patrimonial (Estilo Investidor 10) */}
+            {/* CHART: Evolução Patrimonial (Estilo Investidor 10 - Stacked) */}
             <Card className="bg-brand-surface border-brand-border">
                 <CardHeader className="flex items-center gap-2 border-brand-border/30">
                     <div className="p-2 bg-brand-primary/10 rounded-lg text-brand-primary">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+                            <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
                         </svg>
                     </div>
-                    {t('monthlyEvolution')} (Valor Aplicado vs Ganho)
+                    {t('monthlyEvolution')} (Valor Aplicado + Ganho de Capital)
                 </CardHeader>
                 <CardContent className="h-[400px]">
                     {monthlyData.length > 0 ? (
