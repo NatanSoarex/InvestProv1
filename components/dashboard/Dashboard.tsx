@@ -106,7 +106,6 @@ const Dashboard: React.FC = () => {
       };
       
       try {
-        // Uses Snapshot mode from API to ensure "Neon Area Chart" trend visualization
         const historyData = await financialApi.getPortfolioPriceHistory(transactions, fxRate, selectedRange, currentQuotesMap);
         setPortfolioHistory(historyData);
       } catch (e) {
@@ -128,8 +127,8 @@ const Dashboard: React.FC = () => {
   const formatXAxis = (val: string) => {
       try {
           const d = new Date(val);
-          // INTRADAY FORMAT FIX
           if (selectedRange === '1D') {
+              // Force local time display for intraday
               return d.toLocaleTimeString(settings.language, { hour: '2-digit', minute: '2-digit' });
           }
           if (selectedRange === '5D' || selectedRange === '1M') {
@@ -180,7 +179,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* DASHBOARD CHART: NEON AREA CHART (TRENDING UP/DOWN) */}
+        {/* NEON AREA CHART (TRENDING UP/DOWN) */}
         <Card className="lg:col-span-2 border-brand-border/50 bg-brand-surface/30 backdrop-blur-md">
             <CardHeader className="border-brand-border/30 flex flex-col sm:flex-row justify-between items-center pb-2 gap-4">
                 <span>{t('wealthEvolution')}</span>
