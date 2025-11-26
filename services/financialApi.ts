@@ -1,11 +1,6 @@
 
 import { Asset, Quote, AssetClass, HistoricalDataPoint, Transaction, MarketState } from '../types';
 
-// ============================================================================
-// PROVEST FINANCIAL ENGINE 15.0 (SNAPSHOT RESTORED + LOGO EXPANSION)
-// ============================================================================
-
-// --- Endpoints ---
 const YAHOO_QUOTE_API = 'https://query1.finance.yahoo.com/v7/finance/quote';
 const YAHOO_CHART_API = 'https://query2.finance.yahoo.com/v8/finance/chart';
 const YAHOO_SEARCH_URL = 'https://query2.finance.yahoo.com/v1/finance/search';
@@ -16,14 +11,12 @@ const AWESOMEAPI_BASE = 'https://economia.awesomeapi.com.br/json';
 const COINCAP_API = 'https://api.coincap.io/v2/assets';
 const KUCOIN_API = 'https://api.kucoin.com/api/v1/market/stats';
 
-// --- Resilience Proxies ---
 const PROXIES = [
     (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
     (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, 
     (url: string) => url 
 ];
 
-// --- Cache Configuration ---
 const CACHE_TTL = {
     QUOTE: 10 * 1000,       
     HISTORY: 2 * 60 * 1000, 
@@ -35,7 +28,6 @@ const cache = {
     assets: {} as Record<string, Asset>,
 };
 
-// --- MASSIVE LOGO MAP ---
 const LOGO_MAP: Record<string, string> = {
     'BTC': 'https://assets.coingecko.com/coins/images/1/large/bitcoin.png',
     'ETH': 'https://assets.coingecko.com/coins/images/279/large/ethereum.png',
@@ -68,7 +60,6 @@ export const TOP_ASSETS_FALLBACK = [
     { t: 'VOO', n: 'Vanguard S&P 500', c: AssetClass.ETF }, { t: 'IVVB11', n: 'iShares S&P 500', c: AssetClass.ETF }
 ];
 
-// --- Helpers ---
 const smartFetch = async (url: string, useProxy = true, timeoutMs = 2500) => {
     const separator = url.includes('?') ? '&' : '?';
     const bust = `_t=${Date.now()}`; 
@@ -143,7 +134,6 @@ const calculateFallbackMetrics = (quote: Quote): Quote => {
     return quote;
 };
 
-// --- Providers ---
 const providers = {
     binance: async (ticker: string): Promise<Quote | null> => {
         const { binanceSymbol } = getCryptoMapping(ticker);
@@ -280,10 +270,6 @@ const providers = {
     }
 };
 
-// ============================================================================
-// EXPORTED API
-// ============================================================================
-
 export const financialApi = {
     searchAssets: async (query: string): Promise<Asset[]> => {
         if (query.length < 2) return [];
@@ -362,11 +348,11 @@ export const financialApi = {
             let quote: Quote | null = null;
 
             if (type === 'CRYPTO') {
-                // Prioritize exchanges for Crypto 24h data
                 const sources = [providers.binance, providers.coincap, providers.kucoin, providers.coingecko, providers.yahoo];
                 for (const provider of sources) {
                     const q = await provider(type === 'CRYPTO' && provider === providers.yahoo ? `${symbol}-USD` : symbol);
                     if (q) {
+                        // Hunter Algorithm: Prefer non-zero change
                         if (Math.abs(q.changePercent) > 0.00001) {
                             quote = q; break; 
                         } else if (!quote) {
@@ -408,7 +394,6 @@ export const financialApi = {
         return 5.25; 
     },
 
-    // --- DASHBOARD HISTORY ENGINE (SNAPSHOT MODE RESTORED) ---
     getPortfolioPriceHistory: async (
         transactions: Transaction[], 
         fxRate: number, 
@@ -459,6 +444,7 @@ export const financialApi = {
         }));
 
         // 2. Snapshot Mode: Apply CURRENT holdings to historical prices
+        // This ensures the graph always shows market trends "Up and Down" for the selection
         const currentHoldings: Record<string, number> = {};
         transactions.forEach(tx => {
             currentHoldings[tx.ticker] = (currentHoldings[tx.ticker] || 0) + tx.quantity;
@@ -471,7 +457,6 @@ export const financialApi = {
             timeline = Array.from(new Set(timestamps)).sort((a, b) => a - b);
         } 
         
-        // Fallback Timeline if API fails (Flat Line)
         if (timeline.length < 2) {
             const start = Math.floor(startTime.getTime() / 1000);
             const end = Math.floor(now.getTime() / 1000);
@@ -500,7 +485,6 @@ export const financialApi = {
                 const history = assetHistoryMap[ticker];
                 
                 if (history) {
-                    // Find closest timestamp
                     const idx = history.timestamp.findIndex(t => Math.abs(t - ts) < 600); 
                     if (idx !== -1 && history.close[idx]) {
                         price = history.close[idx];
@@ -528,7 +512,6 @@ export const financialApi = {
             }
         });
 
-        // 4. Force Snap to Current Live Value
         if (currentQuotes) {
             let liveValue = 0;
             Object.keys(currentHoldings).forEach(t => {

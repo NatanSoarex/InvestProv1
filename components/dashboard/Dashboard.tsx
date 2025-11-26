@@ -99,7 +99,6 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     const fetchHistory = async () => {
-      // Even if no transactions, we might want to show an empty graph or 0-line
       if (transactions.length === 0) {
         setIsHistoryLoading(false);
         setPortfolioHistory([]);
@@ -107,7 +106,6 @@ const Dashboard: React.FC = () => {
       };
       
       try {
-        // Passing currentQuotesMap ensures the graph ends at the exact current value
         const historyData = await financialApi.getPortfolioPriceHistory(transactions, fxRate, selectedRange, currentQuotesMap);
         setPortfolioHistory(historyData);
       } catch (e) {
@@ -118,8 +116,6 @@ const Dashboard: React.FC = () => {
     }
 
     fetchHistory();
-    
-    // TRIGGER UPDATE WHEN lastUpdated CHANGES (Every 30s)
   }, [transactions, fxRate, selectedRange, lastUpdated, currentQuotesMap]);
 
   const displayHistory = portfolioHistory.map(p => ({
@@ -181,7 +177,6 @@ const Dashboard: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* NEON AREA CHART (TRENDING UP/DOWN) */}
         <Card className="lg:col-span-2 border-brand-border/50 bg-brand-surface/30 backdrop-blur-md">
             <CardHeader className="border-brand-border/30 flex flex-col sm:flex-row justify-between items-center pb-2 gap-4">
                 <span>{t('wealthEvolution')}</span>
