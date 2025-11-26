@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { Transaction, Holding, Asset, Quote } from '../types';
 import { financialApi } from '../services/financialApi';
@@ -40,7 +39,6 @@ interface PortfolioContextType {
   t: (key: keyof typeof translations['pt-BR']) => string;
   isPremium: boolean;
   canAddAsset: boolean;
-  importTransactions: (transactions: Omit<Transaction, 'id'>[]) => void;
 }
 
 const PortfolioContext = createContext<PortfolioContextType | undefined>(undefined);
@@ -269,10 +267,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [isPremiumUser, validTickers, uniqueAssets, currentUser, setLocalTransactions]);
 
-  const importTransactions = useCallback(async (newTransactions: Omit<Transaction, 'id'>[]) => {
-      console.log("Import disabled");
-  }, []);
-
   const removeTransaction = useCallback(async (id: string) => {
     setTransactions(prev => prev.filter(t => t.id !== id));
     if (isSupabaseConfigured) {
@@ -382,9 +376,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           
           let finalPrice = 0;
           
-          // FORCE PRICE LOGIC: If quote.price is 0, try previousClose.
-          // If still 0, we fallback to cost basis to prevent -100% loss display (Frozen/Safety state).
-          // This fixes the "I put an asset and lost everything" issue.
           if (quote && Number(quote.price) > 0) {
               finalPrice = Number(quote.price);
           } else if (quote && Number(quote.previousClose) > 0) {
@@ -394,8 +385,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           if (finalPrice > 0) {
               h.currentValue = finalPrice * h.totalQuantity;
           } else {
-              // SAFETY NET: If API fails completely or is loading, assume breakeven (0% profit/loss)
-              // This prevents the "Negative Balance" shock.
               h.currentValue = h.totalInvested; 
           }
           
@@ -500,7 +489,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     holdings, transactions, watchlist, totalValue, totalInvested, totalGainLoss, totalGainLossPercent, dayChange, dayChangePercent,
     addTransaction, removeTransaction, removeHolding, addToWatchlist, removeFromWatchlist, isAssetInWatchlist,
     getAssetDetails, getLiveQuote, isLoading, isRefreshing, refresh, fxRate, lastUpdated, settings, updateSettings, formatDisplayValue, t,
-    isPremium: isPremiumUser, canAddAsset, importTransactions
+    isPremium: isPremiumUser, canAddAsset
   };
 
   return <PortfolioContext.Provider value={value}>{children}</PortfolioContext.Provider>;

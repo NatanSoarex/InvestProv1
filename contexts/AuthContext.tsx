@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User, Suggestion } from '../types';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
@@ -78,7 +77,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const username = dbProfile?.username || meta.username || session.user.email;
       const name = dbProfile?.name || meta.name || 'Usuário';
       const securityCode = dbProfile?.security_code || meta.security_code || '------';
-      const isAdmin = dbProfile?.is_admin || username === '@natansoarex';
+      // Strict Admin Check
+      const isAdmin = (dbProfile?.is_admin === true) || (username === '@natansoarex');
       const isBanned = dbProfile?.is_banned || false;
       const subscriptionExpiresAt = dbProfile?.subscription_expires_at || null;
       const createdAt = dbProfile?.created_at || new Date().toISOString();
@@ -100,25 +100,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // --- INICIALIZAÇÃO ---
   useEffect(() => {
     const initAuth = async () => {
-        const AUTO_LOGIN_DEV = false; 
-
-        if (AUTO_LOGIN_DEV) {
-             setCurrentUser({
-                id: 'dev_admin',
-                username: '@natansoarex',
-                name: 'Admin Dev',
-                email: 'admin@provest.com',
-                password: '',
-                securityCode: '000000',
-                isAdmin: true,
-                isBanned: false,
-                subscriptionExpiresAt: new Date(Date.now() + 31536000000).toISOString(),
-                createdAt: new Date().toISOString()
-            });
-            setLoading(false);
-            return;
-        }
-
         if (isSupabaseConfigured) {
             // MODO SUPABASE (Cloud)
             try {
@@ -160,21 +141,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             // LISTENER BLINDADO CONTRA LOGOUT ACIDENTAL
             supabase.auth.onAuthStateChange(async (event, session) => {
-                console.log("Auth Event:", event);
-                
                 if (event === 'SIGNED_OUT') {
                     setCurrentUser(null);
                     setLoading(false);
                 } else if (session?.user) {
-                    // Em qualquer evento de sessão válida (SIGNED_IN, TOKEN_REFRESHED, INITIAL_SESSION)
-                    // Garantimos que o usuário está setado
                     if (!currentUser || event === 'SIGNED_IN') {
                          const user = mapSessionToUser(session);
                          setCurrentUser(user);
+                         
+                         // Ensure we get fresh profile data on login
+                         const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+                         if (data) {
+                             setCurrentUser(mapSessionToUser(session, data));
+                         }
                     }
                     setLoading(false);
                 } else if (event === 'INITIAL_SESSION') {
-                    // Se inicializou e não tem sessão, termina loading
                     setLoading(false);
                 }
             });
@@ -207,7 +189,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     initAuth();
-  }, []); // Executa apenas uma vez na montagem
+  }, []); 
 
   // --- ADMIN: REFRESH USER DATA ---
   const refreshUserData = useCallback(async () => {
@@ -293,7 +275,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return true;
 
     } else {
-        // Local Fallback
         await new Promise(resolve => setTimeout(resolve, 500));
         const user = users.find(u => 
             (u.username.toLowerCase() === username.toLowerCase() || u.email.toLowerCase() === username.toLowerCase()) 
@@ -362,7 +343,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 await retryOperation(insertProfile, 5, 1000); // Try 5 times
             } catch (profileErr) {
                 console.error("Failed to force-save profile after retries:", profileErr);
-                // Even if profile insert fails, we let user enter via metadata
             }
 
             const newUser: User = {
@@ -383,7 +363,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error("Erro ao criar conta no servidor.");
 
     } else {
-        // Local Fallback
         if (users.some(u => u.username.toLowerCase() === data.username.toLowerCase())) throw new Error("Usuário já em uso.");
         const newUser: User = {
             ...data,
@@ -403,15 +382,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    // 1. UI First: Remove usuário da tela imediatamente
     setCurrentUser(null);
     
-    // 2. Background: Limpa sessão no servidor
     if (isSupabaseConfigured) {
         try {
             await supabase.auth.signOut();
         } catch (e) {
-            // Erro silencioso
         }
     } else {
         localStorage.removeItem('provest_session');
@@ -425,14 +401,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await supabase.from('profiles').update({ subscription_expires_at: expiryDate }).eq('id', userId);
       } 
       
-      // UPDATE LIST
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, subscriptionExpiresAt: expiryDate } : u));
 
-      // MEGA FIX: UPDATE CURRENT USER IMMEDIATELY IF IT IS ME
       if (currentUser && currentUser.id === userId) {
           setCurrentUser(prev => prev ? ({ ...prev, subscriptionExpiresAt: expiryDate }) : null);
       } else if (!isSupabaseConfigured) {
-          // Local storage logic fallback
           const updated = users.map(u => u.id === userId ? { ...u, subscriptionExpiresAt: expiryDate } : u);
           saveLocalUsers(updated);
       }

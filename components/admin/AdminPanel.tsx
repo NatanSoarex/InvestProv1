@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Card, CardHeader, CardContent } from '../ui/Card';
@@ -29,11 +28,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         setIsRefreshing(false);
     };
 
-    // Script SQL "Supreme" - Bloqueia duplicatas e conserta tudo
     const sqlCommand = `-- 1. Tabelas Principais
 create table if not exists public.profiles (
   id uuid references auth.users on delete cascade not null primary key,
-  username text, -- Removido unique aqui para garantir na constraint abaixo
+  username text,
   name text,
   email text,
   security_code text,
@@ -81,7 +79,7 @@ create table if not exists public.suggestions (
 drop policy if exists "Perfis publicos" on public.profiles;
 drop policy if exists "Usuario atualiza proprio perfil" on public.profiles;
 drop policy if exists "Admin ve todos perfis" on public.profiles;
-drop policy if exists "Admin atualiza todos perfis" on public.profiles; -- Clean old update policy
+drop policy if exists "Admin atualiza todos perfis" on public.profiles;
 
 drop policy if exists "Usuario ve suas transacoes" on public.transactions;
 drop policy if exists "Usuario cria suas transacoes" on public.transactions;
@@ -118,7 +116,7 @@ create policy "Usuario deleta da watchlist" on public.watchlist for delete using
 create policy "Admin ve sugestoes" on public.suggestions for select using (true);
 create policy "Usuario envia sugestao" on public.suggestions for insert with check (auth.uid() = user_id);
 
--- 5. Gatilho Automático (Trigger) - Reforçado
+-- 5. Gatilho Automático (Trigger)
 create or replace function public.handle_new_user() 
 returns trigger as $$
 begin
