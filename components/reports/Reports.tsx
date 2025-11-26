@@ -24,6 +24,40 @@ const CustomPieTooltip = ({ active, payload }: any) => {
     return null;
 };
 
+// Tooltip Customizado para o Gráfico de Barras (Mostra as 3 opções: Aplicado, Ganho, Saldo)
+const CustomBarTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+        const invested = payload.find((p: any) => p.dataKey === 'invested')?.value || 0;
+        const gain = payload.find((p: any) => p.dataKey === 'gain')?.value || 0;
+        const total = invested + gain; // O Saldo é a soma no Stacked Chart
+
+        return (
+            <div className="bg-[#161B22] border border-[#30363D] p-3 rounded-lg shadow-xl min-w-[180px]">
+                <p className="text-brand-secondary text-xs mb-2 font-bold uppercase">{label}</p>
+                
+                {/* 1. Valor Aplicado */}
+                <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs text-[#059669] font-medium">● Valor Aplicado:</span>
+                    <span className="text-xs text-brand-text font-mono">{formatCurrency(invested, 'USD')}</span>
+                </div>
+
+                {/* 2. Ganho de Capital */}
+                <div className="flex justify-between items-center mb-2 border-b border-white/10 pb-2">
+                    <span className="text-xs text-[#34D399] font-medium">● Ganho de Capital:</span>
+                    <span className="text-xs text-brand-text font-mono">+{formatCurrency(gain, 'USD')}</span>
+                </div>
+
+                {/* 3. Saldo Total (A 3ª Opção pedida) */}
+                <div className="flex justify-between items-center pt-1">
+                    <span className="text-sm text-white font-bold">Saldo Total:</span>
+                    <span className="text-sm text-brand-primary font-bold font-mono">{formatCurrency(total, 'USD')}</span>
+                </div>
+            </div>
+        );
+    }
+    return null;
+};
+
 const AssetAllocation: React.FC<{ holdings: Holding[], noDataText: string }> = ({ holdings, noDataText }) => {
     const { formatDisplayValue, totalValue } = usePortfolio();
     
@@ -104,21 +138,20 @@ const Reports: React.FC = () => {
                 return;
             }
 
-            // 1. Fetch Snapshot History (Current Holdings projected to past)
+            // 1. Fetch Snapshot History
             const history = await financialApi.getPortfolioPriceHistory(transactions, fxRate, 'ALL');
             
-            // 2. Calculate Total Current Invested (Reference for Scaling)
+            // 2. Calculate Total Current Invested
             const totalCurrentInvested = transactions.reduce((acc, t) => acc + t.totalCost, 0);
 
             // 3. Sort Transactions
             const sortedTx = [...transactions].sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
             const firstTxDate = sortedTx.length > 0 ? new Date(sortedTx[0].dateTime) : new Date();
             
-            // 4. Setup Date Markers
             const getMonthId = (d: Date) => d.getFullYear() * 100 + (d.getMonth() + 1);
             const startMonthId = getMonthId(firstTxDate);
 
-            // 5. Group Investments by Month
+            // 4. Group Investments by Month
             const contributionsByMonth: Record<string, number> = {};
             transactions.forEach(tx => {
                 const date = new Date(tx.dateTime);
@@ -129,14 +162,14 @@ const Reports: React.FC = () => {
                 contributionsByMonth[key] += cost;
             });
 
-            // 6. Group History Snapshots by Month
+            // 5. Group History Snapshots
             const groupedHistory: Record<string, any> = {};
             history.forEach(point => {
                 const date = new Date(point.date);
                 const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
                 groupedHistory[key] = {
                     dateKey: key,
-                    snapshotValue: point.price, // This is the value of TODAY's portfolio at THAT time
+                    snapshotValue: point.price,
                     displayDate: date.toLocaleDateString(settings.language, { month: 'short', year: '2-digit' })
                 };
             });
@@ -155,7 +188,8 @@ const Reports: React.FC = () => {
                 const historyPoint = groupedHistory[key] || {};
                 const rawSnapshotValue = historyPoint.snapshotValue || 0;
                 
-                // FILTER 1: Before First Investment -> Zero
+                // CRITICAL: FIX GHOST PROFITS
+                // If month is before first investment, ZERO EVERYTHING
                 if (currentMonthId < startMonthId) {
                     return {
                         dateKey: key,
@@ -166,7 +200,7 @@ const Reports: React.FC = () => {
                     };
                 }
 
-                // FILTER 2: Zero Invested -> Zero Gain
+                // If Total Invested is Zero, Gain must be Zero
                 if (runningInvested <= 0) {
                      return {
                         dateKey: key,
@@ -177,24 +211,21 @@ const Reports: React.FC = () => {
                     };
                 }
 
-                // RATIO SCALING LOGIC (The fix for "Ghost Profits")
-                // We scale the Snapshot Value down based on how much money was actually invested at that time
-                // vs how much money is invested today.
+                // RATIO SCALING to remove Ghost Profits from future assets
                 let adjustedNetWorth = rawSnapshotValue;
-                
                 if (totalCurrentInvested > 0) {
                     const ratio = runningInvested / totalCurrentInvested;
                     adjustedNetWorth = rawSnapshotValue * ratio;
                 }
 
-                // Calculate Gain based on Adjusted Value
+                // Calculate Gain
                 let gain = adjustedNetWorth - runningInvested;
                 
                 return {
                     dateKey: key,
                     displayDate: historyPoint.displayDate || key,
                     invested: runningInvested,
-                    gain: gain > 0 ? gain : 0, // Stacked bar only shows positive gain
+                    gain: gain > 0 ? gain : 0,
                     totalValue: adjustedNetWorth
                 };
             });
@@ -268,31 +299,25 @@ const Reports: React.FC = () => {
                                     axisLine={false} 
                                     tickFormatter={(val) => new Intl.NumberFormat('en-US', { notation: "compact", compactDisplay: "short" }).format(val)}
                                 />
-                                <Tooltip 
-                                    cursor={{ fill: '#30363D', opacity: 0.2 }}
-                                    contentStyle={{ backgroundColor: '#161B22', border: '1px solid #30363D', borderRadius: '8px' }}
-                                    itemStyle={{ fontSize: '12px', fontWeight: 600 }}
-                                    formatter={(value: number, name: string) => [formatCurrency(value, 'USD'), name]}
-                                    labelStyle={{ color: '#8B949E', marginBottom: '5px' }}
-                                />
+                                <Tooltip content={<CustomBarTooltip />} cursor={{ fill: '#30363D', opacity: 0.2 }} />
                                 <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px', fontWeight: 500, color: '#C9D1D9' }} />
                                 
-                                {/* Valor Aplicado (Base) */}
+                                {/* Base: Valor Aplicado */}
                                 <Bar 
                                     dataKey="invested" 
                                     name={t('appliedValue')} 
                                     stackId="a" 
-                                    fill="#059669" 
+                                    fill="#059669" // Dark Green
                                     radius={[0, 0, 0, 0]} 
                                     barSize={20} 
                                 />
                                 
-                                {/* Ganho de Capital (Topo) */}
+                                {/* Top: Ganho de Capital */}
                                 <Bar 
                                     dataKey="gain" 
                                     name={t('capitalGain')} 
                                     stackId="a" 
-                                    fill="#34D399" 
+                                    fill="#34D399" // Light Green
                                     radius={[4, 4, 0, 0]} 
                                     barSize={20} 
                                 />

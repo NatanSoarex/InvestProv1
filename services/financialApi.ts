@@ -81,8 +81,7 @@ const LOGO_MAP: Record<string, string> = {
     'AMD': 'https://logo.clearbit.com/amd.com',
     'INTC': 'https://logo.clearbit.com/intel.com',
 
-    // Major US ETFs (Mapped to Issuer Logos for Consistency)
-    // Vanguard (VT included here to fix incorrect image)
+    // Major US ETFs
     'VT': 'https://logo.clearbit.com/vanguard.com',
     'VOO': 'https://logo.clearbit.com/vanguard.com',
     'VTI': 'https://logo.clearbit.com/vanguard.com',
@@ -94,32 +93,12 @@ const LOGO_MAP: Record<string, string> = {
     'VWO': 'https://logo.clearbit.com/vanguard.com',
     'VXUS': 'https://logo.clearbit.com/vanguard.com',
     'BNDX': 'https://logo.clearbit.com/vanguard.com',
-    
-    // Invesco
     'QQQ': 'https://logo.clearbit.com/invesco.com',
     'QQQM': 'https://logo.clearbit.com/invesco.com',
-    'RSP': 'https://logo.clearbit.com/invesco.com',
-    
-    // SPDR (State Street)
     'SPY': 'https://logo.clearbit.com/ssga.com',
     'DIA': 'https://logo.clearbit.com/ssga.com',
     'GLD': 'https://logo.clearbit.com/ssga.com',
-    'XLE': 'https://logo.clearbit.com/ssga.com',
-    'XLF': 'https://logo.clearbit.com/ssga.com',
-    'XLK': 'https://logo.clearbit.com/ssga.com',
-    
-    // iShares (BlackRock)
     'IVV': 'https://logo.clearbit.com/ishares.com',
-    'EEM': 'https://logo.clearbit.com/ishares.com',
-    'TLT': 'https://logo.clearbit.com/ishares.com',
-    'IWM': 'https://logo.clearbit.com/ishares.com',
-    'AGG': 'https://logo.clearbit.com/ishares.com',
-    'SLV': 'https://logo.clearbit.com/ishares.com',
-    
-    // Others
-    'SCHD': 'https://logo.clearbit.com/schwab.com',
-    'JEPI': 'https://logo.clearbit.com/jpmorgan.com',
-    'ARKK': 'https://logo.clearbit.com/ark-invest.com',
     'SMH': 'https://logo.clearbit.com/vaneck.com',
     'COIN': 'https://logo.clearbit.com/coinbase.com',
 };
@@ -169,21 +148,15 @@ const smartFetch = async (url: string, useProxy = true, timeoutMs = 2500) => {
 
 const resolveLogo = (ticker: string, name: string): string => {
     const t = ticker.toUpperCase().replace('.SA', '').replace('-USD', '').trim();
-    
-    // Direct map hit
     if (LOGO_MAP[t]) return LOGO_MAP[t];
     
-    // Heuristics for ETFs/Funds based on Name
     const lowerName = name.toLowerCase();
     if (lowerName.includes('vanguard')) return 'https://logo.clearbit.com/vanguard.com';
     if (lowerName.includes('ishares') || lowerName.includes('blackrock')) return 'https://logo.clearbit.com/ishares.com';
     if (lowerName.includes('invesco')) return 'https://logo.clearbit.com/invesco.com';
     if (lowerName.includes('spdr') || lowerName.includes('state street')) return 'https://logo.clearbit.com/ssga.com';
-    if (lowerName.includes('schwab')) return 'https://logo.clearbit.com/schwab.com';
     if (lowerName.includes('ark ')) return 'https://logo.clearbit.com/ark-invest.com';
-    if (lowerName.includes('global x')) return 'https://logo.clearbit.com/globalxetfs.com';
     if (lowerName.includes('vaneck')) return 'https://logo.clearbit.com/vaneck.com';
-    if (lowerName.includes('proshares')) return 'https://logo.clearbit.com/proshares.com';
 
     let domain = ticker.includes('.SA') ? `${t.toLowerCase()}.com.br` : `${t.toLowerCase()}.com`;
     return `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
@@ -193,13 +166,10 @@ const normalizeTicker = (ticker: string) => {
     const t = ticker.toUpperCase().trim();
     const cryptoMatch = TOP_ASSETS_FALLBACK.find(a => a.t === t && a.c === AssetClass.CRYPTO);
     if (cryptoMatch) return { symbol: t, type: 'CRYPTO' };
-    
     if (['BTC','ETH','SOL','BNB','XRP','USDT','USDC','ADA','DOGE','AVAX','LINK'].includes(t)) return { symbol: t, type: 'CRYPTO' };
-    
     const brRegex = /^[A-Z]{4}(3|4|5|6|11)$/;
     if (t.endsWith('.SA')) return { symbol: t, type: 'BR' };
     if (brRegex.test(t)) return { symbol: `${t}.SA`, type: 'BR' };
-    
     return { symbol: t, type: 'GLOBAL' };
 };
 
@@ -207,16 +177,9 @@ const getCryptoMapping = (ticker: string) => {
     const t = ticker.replace('-USD', '').toUpperCase();
     const binanceSymbol = ['USDT', 'USDC'].includes(t) ? `${t}USDC` : `${t}USDT`;
     const coinId = { 
-        'BTC': 'bitcoin', 
-        'ETH': 'ethereum', 
-        'SOL': 'solana', 
-        'USDT': 'tether',
-        'BNB': 'binancecoin',
-        'XRP': 'ripple',
-        'ADA': 'cardano',
-        'DOGE': 'dogecoin',
-        'AVAX': 'avalanche-2',
-        'LINK': 'chainlink'
+        'BTC': 'bitcoin', 'ETH': 'ethereum', 'SOL': 'solana', 'USDT': 'tether',
+        'BNB': 'binancecoin', 'XRP': 'ripple', 'ADA': 'cardano', 'DOGE': 'dogecoin',
+        'AVAX': 'avalanche-2', 'LINK': 'chainlink'
     }[t] || t.toLowerCase();
     return { binanceSymbol, coinId };
 };
@@ -260,11 +223,7 @@ const providers = {
                 const changePerc = parseFloat(data.data.changePercent24Hr);
                 const prev = price / (1 + (changePerc / 100));
                 return calculateFallbackMetrics({
-                    price,
-                    change: price - prev,
-                    changePercent: changePerc,
-                    previousClose: prev,
-                    marketState: MarketState.OPEN
+                    price, change: price - prev, changePercent: changePerc, previousClose: prev, marketState: MarketState.OPEN
                 });
             }
         } catch (e) {}
@@ -280,9 +239,7 @@ const providers = {
                 const change = parseFloat(data.data.changePrice);
                 const changePercent = parseFloat(data.data.changeRate) * 100;
                 const prevClose = price - change;
-                return {
-                    price, change, changePercent, previousClose: prevClose, marketState: MarketState.OPEN
-                };
+                return { price, change, changePercent, previousClose: prevClose, marketState: MarketState.OPEN };
             }
         } catch (e) {}
         return null;
@@ -450,7 +407,6 @@ export const financialApi = {
                 for (const provider of sources) {
                     const q = await provider(type === 'CRYPTO' && provider === providers.yahoo ? `${symbol}-USD` : symbol);
                     if (q) {
-                        // Hunter Algorithm: Prefer non-zero change
                         if (Math.abs(q.changePercent) > 0.00001) {
                             quote = q; break; 
                         } else if (!quote) {
@@ -506,7 +462,7 @@ export const financialApi = {
         
         if (range === '1D') {
             startTime.setHours(0, 0, 0, 0); 
-            interval = '2m'; // Ultra High Granularity for 1D Volatility
+            interval = '2m'; 
         } else if (range === '5D') {
             startTime.setDate(now.getDate() - 5);
             interval = '15m';
@@ -541,7 +497,7 @@ export const financialApi = {
             } catch (e) {}
         }));
 
-        // 2. Snapshot Mode: Apply CURRENT holdings to historical prices
+        // 2. SNAPSHOT MODE: Apply CURRENT holdings to historical prices (Continuous Trend Line)
         const currentHoldings: Record<string, number> = {};
         transactions.forEach(tx => {
             currentHoldings[tx.ticker] = (currentHoldings[tx.ticker] || 0) + tx.quantity;
@@ -609,6 +565,7 @@ export const financialApi = {
             }
         });
 
+        // Ensure endpoint matches current value
         if (currentQuotes) {
             let liveValue = 0;
             Object.keys(currentHoldings).forEach(t => {
