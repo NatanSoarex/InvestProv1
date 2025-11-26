@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo } from 'react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { Card, CardHeader, CardContent } from '../ui/Card';
@@ -56,7 +57,7 @@ const Projections: React.FC = () => {
                 <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                         <div>
-                            <label className="block text-sm font-medium text-brand-secondary mb-1">{t('monthlyContribution')} (USD)</label>
+                            <label className="block text-sm font-medium text-brand-secondary mb-1">{t('monthlyContributionProj')} (USD)</label>
                             <input type="number" value={monthlyContribution} onChange={e => setMonthlyContribution(Number(e.target.value))} className="w-full bg-brand-bg border border-brand-border rounded-lg px-3 py-2 text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary" />
                         </div>
                         <div>

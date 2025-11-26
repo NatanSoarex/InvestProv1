@@ -3,7 +3,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { Card, CardHeader, CardContent } from '../ui/Card';
-import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
 import { financialApi } from '../../services/financialApi';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { HistoricalDataPoint, Transaction, Quote } from '../../types';
@@ -13,8 +13,9 @@ const SummaryCard: React.FC<{ title: string; value: string; change?: number; cha
   const safeChange = change ?? 0;
   const safeChangePercent = changePercent ?? 0;
   const hasChange = change !== undefined && changePercent !== undefined;
-  const isPositive = hasChange && safeChange >= 0;
-  const isNeutral = hasChange && Math.abs(safeChange) < 0.01;
+  const isPositive = hasChange && safeChange >= 0.01;
+  const isNegative = hasChange && safeChange <= -0.01;
+  const isNeutral = !isPositive && !isNegative;
 
   return (
     <Card className="relative overflow-hidden">
@@ -178,6 +179,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* DASHBOARD CHART: RESTORED TO AREA CHART (NEON STYLE) */}
         <Card className="lg:col-span-2 border-brand-border/50 bg-brand-surface/30 backdrop-blur-md">
             <CardHeader className="border-brand-border/30 flex flex-col sm:flex-row justify-between items-center pb-2 gap-4">
                 <span>{t('wealthEvolution')}</span>
@@ -202,15 +204,15 @@ const Dashboard: React.FC = () => {
             <CardContent className="h-[350px] w-full p-0 pt-4">
                 {displayHistory.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={displayHistory} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <AreaChart data={displayHistory} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                         <defs>
                             <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#58A6FF" stopOpacity={0.4}/>
-                                <stop offset="95%" stopColor="#58A6FF" stopOpacity={0}/>
+                                <stop offset="5%" stopColor="#58A6FF" stopOpacity={0.6}/>
+                                <stop offset="95%" stopColor="#58A6FF" stopOpacity={0.05}/>
                             </linearGradient>
                         </defs>
                         
-                        <CartesianGrid strokeDasharray="3 3" stroke="#30363D" opacity={0.3} vertical={false} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#30363D" opacity={0.2} vertical={false} />
                         
                         <XAxis 
                             dataKey="date" 
@@ -241,12 +243,12 @@ const Dashboard: React.FC = () => {
                             contentStyle={{ 
                                 backgroundColor: 'rgba(13, 17, 23, 0.9)', 
                                 border: '1px solid #30363D',
-                                borderRadius: '8px',
+                                borderRadius: '12px',
                                 padding: '12px',
-                                backdropFilter: 'blur(4px)',
-                                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)'
+                                backdropFilter: 'blur(8px)',
+                                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.6)'
                             }}
-                            itemStyle={{ fontSize: '12px', fontWeight: 600 }}
+                            itemStyle={{ fontSize: '13px', fontWeight: 600 }}
                             labelStyle={{ color: '#8B949E', fontSize: '11px', marginBottom: '8px' }}
                             labelFormatter={(label) => {
                                 try {
@@ -261,48 +263,27 @@ const Dashboard: React.FC = () => {
                                 } catch { return ''; }
                             }}
                             formatter={(value, name) => {
-                                const isNetWorth = name === 'Patrimônio' || name === 'Net Worth' || name === 'Valor' || name === t('netWorth');
-                                const color = isNetWorth ? '#58A6FF' : '#8B949E';
-                                let formatted = '';
-                                try {
-                                    formatted = new Intl.NumberFormat(settings.language, { style: 'currency', currency: settings.currency }).format(value as number);
-                                } catch { formatted = `${value}` }
+                                const formatted = new Intl.NumberFormat(settings.language, { style: 'currency', currency: settings.currency }).format(value as number);
                                 return [
-                                    <span style={{ color: color }}>
-                                        {formatted}
-                                    </span>, 
-                                    name
+                                    <span style={{ color: '#58A6FF', textShadow: '0 0 10px rgba(88,166,255,0.5)' }}>{formatted}</span>, 
+                                    <span style={{ color: '#C9D1D9' }}>{t('netWorth')}</span>
                                 ];
                             }}
                             cursor={{ stroke: '#58A6FF', strokeWidth: 1, strokeDasharray: '4 4' }}
                         />
                         
-                        <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                        
-                        <Line 
-                            type="stepAfter"
-                            dataKey="invested" 
-                            stroke="#8B949E" 
-                            strokeWidth={1} 
-                            strokeDasharray="4 4"
-                            dot={false}
-                            activeDot={false}
-                            name={t('totalInvested')}
-                            opacity={0.5}
-                            animationDuration={0} 
-                        />
-
+                        {/* Primary Glow Area */}
                         <Area 
                             type="monotone" 
                             dataKey="price" 
                             stroke="#58A6FF" 
-                            strokeWidth={2} 
+                            strokeWidth={3} 
                             fillOpacity={1} 
                             fill="url(#colorValue)"
-                            name={t('netWorth')}
-                            animationDuration={800} 
+                            animationDuration={1000} 
+                            filter="drop-shadow(0 0 6px rgba(88, 166, 255, 0.4))"
                         />
-                        </ComposedChart>
+                        </AreaChart>
                     </ResponsiveContainer>
                 ) : (
                     <div className="flex flex-col items-center justify-center h-full text-brand-secondary text-sm">
