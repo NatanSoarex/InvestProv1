@@ -106,7 +106,7 @@ const Dashboard: React.FC = () => {
       };
       
       try {
-        // The financialApi now uses Snapshot mode, so this history reflects current holdings applied to past prices
+        // Uses Snapshot mode from API to ensure "Neon Area Chart" trend visualization
         const historyData = await financialApi.getPortfolioPriceHistory(transactions, fxRate, selectedRange, currentQuotesMap);
         setPortfolioHistory(historyData);
       } catch (e) {

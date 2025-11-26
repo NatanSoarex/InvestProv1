@@ -685,7 +685,6 @@ export const financialApi = {
         const now = new Date();
         let startTime = new Date();
         let interval = '1d';
-        // let intervalMs = 24 * 60 * 60 * 1000; // Not used in loop anymore, we use timestamps from API
         
         // REFINED INTRADAY LOGIC FOR "UP AND DOWN" CHART
         if (range === '1D') {
@@ -727,20 +726,16 @@ export const financialApi = {
             } catch (e) {}
         }));
 
-        // 2. CALCULATE SNAPSHOT HOLDINGS (Pro-Forma)
+        // 2. CALCULATE SNAPSHOT HOLDINGS (Pro-Forma / Snapshot Mode)
+        // This simulates "What if I held my current portfolio in the past?"
+        // This ensures the graph is continuous (up and down) and matches the current Net Worth at the end.
         const currentHoldings: Record<string, number> = {};
-        let currentInvestedTotal = 0;
-
+        
         transactions.forEach(tx => {
             currentHoldings[tx.ticker] = (currentHoldings[tx.ticker] || 0) + tx.quantity;
-            let cost = tx.totalCost;
-            const { type } = normalizeTicker(tx.ticker);
-            if (type === 'BR' && fxRate > 0) cost = cost / fxRate;
-            currentInvestedTotal += cost;
         });
 
         // 3. Generate Master Timeline
-        // We merge all timestamps from all assets to create a unified timeline
         const allTimestamps = new Set<number>();
         Object.values(assetHistoryMap).forEach(h => h.timestamp.forEach(t => allTimestamps.add(t)));
         const sortedTimeline = Array.from(allTimestamps).sort((a, b) => a - b);
@@ -793,7 +788,7 @@ export const financialApi = {
                  resultData.push({
                     date: new Date(ts * 1000).toISOString(),
                     price: portfolioValue,
-                    invested: currentInvestedTotal
+                    invested: 0 // Snapshot mode doesn't track historical cost basis accurately for graph
                 });
             }
         });
@@ -815,6 +810,10 @@ export const financialApi = {
                 resultData[lastIdx].price = liveValue;
             }
         }
+
+        // IMPORTANT: REMOVED STRICT DATE FILTER FOR DASHBOARD GRAPH
+        // The Dashboard graph now correctly shows the "Market Trend" of the current portfolio
+        // for the selected period, regardless of purchase date. This restores the "Wavy Line".
 
         return resultData;
     }

@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { Card, CardHeader, CardContent } from '../ui/Card';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell, CartesianGrid } from 'recharts';
+import { ResponsiveContainer, ComposedChart, Bar, Area, Line, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell, CartesianGrid } from 'recharts';
 import { Holding } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { financialApi } from '../../services/financialApi';
@@ -25,7 +25,7 @@ const CustomPieTooltip = ({ active, payload }: any) => {
     return null;
 };
 
-// Donut Chart with Central Text (Investidor 10 Style)
+// Donut Chart with Central Text
 const AssetAllocation: React.FC<{ holdings: Holding[], noDataText: string }> = ({ holdings, noDataText }) => {
     const { formatDisplayValue, totalValue } = usePortfolio();
     
@@ -45,7 +45,7 @@ const AssetAllocation: React.FC<{ holdings: Holding[], noDataText: string }> = (
                         data={data}
                         cx="50%"
                         cy="50%"
-                        innerRadius={80} // Donut Hole
+                        innerRadius={80}
                         outerRadius={110}
                         paddingAngle={2}
                         dataKey="value"
@@ -60,7 +60,6 @@ const AssetAllocation: React.FC<{ holdings: Holding[], noDataText: string }> = (
                     <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px', color: '#8B949E' }} />
                 </PieChart>
             </ResponsiveContainer>
-            {/* Central Text Overlay */}
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pb-8">
                 <span className="text-brand-secondary text-xs font-medium uppercase tracking-wider">Total</span>
                 <span className="text-brand-text text-xl font-bold">{formatDisplayValue(totalValue)}</span>
@@ -100,7 +99,6 @@ const Reports: React.FC = () => {
     const [monthlyData, setMonthlyData] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    // 1. Calculate Monthly Evolution (Investidor 10 Style: Stacked Bars)
     useEffect(() => {
         const processHistory = async () => {
             if (transactions.length === 0) {
@@ -108,37 +106,75 @@ const Reports: React.FC = () => {
                 return;
             }
 
+            // 1. Get Full Price History (Snapshot Mode for Net Worth Curve)
             const history = await financialApi.getPortfolioPriceHistory(transactions, fxRate, 'ALL');
-            const grouped: Record<string, any> = {};
+            
+            // 2. Calculate Monthly Contributions (Aportes) from Transactions
+            const contributionsByMonth: Record<string, number> = {};
+            const investedAccumulatedByMonth: Record<string, number> = {};
+            
+            // Sort transactions by date
+            const sortedTx = [...transactions].sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
+            
+            let runningInvested = 0;
+            
+            // Map transactions to months
+            sortedTx.forEach(tx => {
+                const date = new Date(tx.dateTime);
+                const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                
+                // Convert cost to USD if needed based on asset type/settings (Simplified here as totalCost is usually stored native)
+                // Assuming context handles currency normalization, but we use raw totalCost here.
+                // NOTE: In a perfect world, we check asset currency. For now, we sum raw.
+                let cost = tx.totalCost; 
+                if (tx.ticker.endsWith('.SA') && fxRate > 0) cost = cost / fxRate; // Normalize BRL inputs to USD for calculation
+
+                if (!contributionsByMonth[key]) contributionsByMonth[key] = 0;
+                contributionsByMonth[key] += cost;
+            });
+
+            // 3. Group History by Month for Net Worth
+            const groupedHistory: Record<string, any> = {};
             
             history.forEach(point => {
                 const date = new Date(point.date);
                 const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
                 
-                // Last point of month
-                grouped[key] = {
+                // Keep replacing to get the last value of the month
+                groupedHistory[key] = {
                     dateKey: key,
                     timestamp: date.getTime(),
-                    balance: point.price,
-                    invested: point.invested || 0,
+                    netWorth: point.price, // Valor de mercado (Curva)
                     displayDate: date.toLocaleDateString(settings.language, { month: 'short', year: '2-digit' })
                 };
             });
 
-            const sortedMonths = Object.values(grouped).sort((a: any, b: any) => a.timestamp - b.timestamp);
+            // 4. Merge Data
+            const allKeys = Array.from(new Set([...Object.keys(groupedHistory), ...Object.keys(contributionsByMonth)])).sort();
             
-            // Prepare data for Stacked Bar (Investidor 10)
-            const finalData = sortedMonths.map((month: any) => {
-                const gain = month.balance - month.invested;
+            let accumulatedInvested = 0;
+            
+            const finalData = allKeys.map(key => {
+                const contribution = contributionsByMonth[key] || 0;
+                accumulatedInvested += contribution;
+                
+                const historyPoint = groupedHistory[key] || {};
                 
                 return {
-                    ...month,
-                    gain: gain > 0 ? gain : 0, 
-                    investedBar: month.invested,
+                    ...historyPoint,
+                    dateKey: key,
+                    displayDate: historyPoint.displayDate || key,
+                    contribution: contribution, // Barra (Aporte do Mês)
+                    accumulatedInvested: accumulatedInvested, // Linha (Total Investido)
+                    netWorth: historyPoint.netWorth || accumulatedInvested // Área (Patrimônio) - Fallback to invested if no history
                 };
             });
 
-            setMonthlyData(finalData);
+            // Filter out empty months at start if any
+            const firstNonZeroIndex = finalData.findIndex(d => d.netWorth > 0 || d.contribution > 0);
+            const trimmedData = firstNonZeroIndex >= 0 ? finalData.slice(firstNonZeroIndex) : [];
+
+            setMonthlyData(trimmedData);
             setIsLoading(false);
         };
 
@@ -152,7 +188,6 @@ const Reports: React.FC = () => {
                 <p className="text-brand-secondary mt-1">{t('reportsSubtitle')}</p>
             </div>
             
-            {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Card className="border-l-4 border-l-brand-secondary bg-brand-surface/50">
                     <CardContent>
@@ -176,7 +211,7 @@ const Reports: React.FC = () => {
                 </Card>
             </div>
 
-            {/* MAIN CHART: Stacked Bar (Investidor 10 Style - Escadinha Empilhada) */}
+            {/* CHART: Aporte Mensal (Barra) vs Patrimônio (Área) */}
             <Card className="bg-brand-surface border-brand-border">
                 <CardHeader className="flex items-center gap-2 border-brand-border/30">
                     <div className="p-2 bg-brand-primary/10 rounded-lg text-brand-primary">
@@ -184,12 +219,18 @@ const Reports: React.FC = () => {
                             <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
                         </svg>
                     </div>
-                    {t('monthlyEvolution')}
+                    {t('monthlyEvolution')} (Aporte vs Patrimônio)
                 </CardHeader>
                 <CardContent className="h-[400px]">
                     {monthlyData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={monthlyData} margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
+                            <ComposedChart data={monthlyData} margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
+                                <defs>
+                                    <linearGradient id="colorNetWorth" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#10B981" stopOpacity={0.3}/>
+                                        <stop offset="95%" stopColor="#10B981" stopOpacity={0.0}/>
+                                    </linearGradient>
+                                </defs>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#30363D" opacity={0.3} vertical={false} />
                                 <XAxis 
                                     dataKey="displayDate" 
@@ -215,27 +256,37 @@ const Reports: React.FC = () => {
                                 />
                                 <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px', fontWeight: 500, color: '#C9D1D9' }} />
                                 
-                                {/* Stacked Bars */}
-                                <Bar 
-                                    dataKey="investedBar" 
-                                    name={t('appliedValue')} 
-                                    stackId="a" 
-                                    fill="#10B981"  // Dark Green (Valor Aplicado)
-                                    radius={[0, 0, 0, 0]} 
-                                    barSize={30} 
-                                    animationDuration={1500}
+                                {/* Área: Patrimônio Líquido (Fundo) */}
+                                <Area 
+                                    type="monotone" 
+                                    dataKey="netWorth" 
+                                    name={t('finalBalance')} 
+                                    stroke="#10B981" 
+                                    fill="url(#colorNetWorth)" 
+                                    strokeWidth={2}
                                 />
+
+                                {/* Linha: Total Investido (Escada Acumulada) */}
+                                <Line 
+                                    type="stepAfter" 
+                                    dataKey="accumulatedInvested" 
+                                    name={t('accumulatedInvested')} 
+                                    stroke="#6B7280" 
+                                    strokeDasharray="4 4" 
+                                    strokeWidth={1}
+                                    dot={false}
+                                />
+
+                                {/* Barra: Aporte do Mês (Só aparece se > 0) */}
                                 <Bar 
-                                    dataKey="gain" 
-                                    name={t('capitalGain')} 
-                                    stackId="a" 
-                                    fill="#6EE7B7" // Light Green (Ganho de Capital)
+                                    dataKey="contribution" 
+                                    name={t('monthlyContribution')} 
+                                    fill="#3B82F6" 
                                     radius={[4, 4, 0, 0]} 
-                                    barSize={30} 
-                                    animationDuration={1500}
+                                    barSize={20} 
                                 />
                                 
-                            </BarChart>
+                            </ComposedChart>
                         </ResponsiveContainer>
                     ) : (
                         <div className="flex items-center justify-center h-full text-brand-secondary flex-col gap-2">
