@@ -1,3 +1,4 @@
+
 import { Asset, Quote, AssetClass, HistoricalDataPoint, Transaction, MarketState } from '../types';
 
 const YAHOO_QUOTE_API = 'https://query1.finance.yahoo.com/v7/finance/quote';
@@ -183,15 +184,32 @@ const getCryptoMapping = (ticker: string) => {
     return { binanceSymbol, coinId };
 };
 
-const calculateFallbackMetrics = (quote: Quote): Quote => {
-    if ((quote.change === 0 || quote.changePercent === 0) && quote.price > 0 && quote.previousClose > 0) {
-        const diff = quote.price - quote.previousClose;
-        if (Math.abs(diff) > 0.0000001) {
-            quote.change = diff;
-            quote.changePercent = (diff / quote.previousClose) * 100;
+// CRITICAL FIX: Helper to FORCE calculation of change if API returns 0
+const calculateRobustMetrics = (price: number, prevClose: number, apiChange: number = 0, apiPercent: number = 0, state: MarketState = MarketState.REGULAR): Quote => {
+    // If we have valid prices but API says 0 change, we calculate it ourselves
+    // Also works if we have prices but no change data
+    let change = apiChange;
+    let changePercent = apiPercent;
+
+    if (price > 0 && prevClose > 0) {
+        // If the API change is 0 OR looks suspicious (like Crypto 0% on volatile day)
+        // We override with math
+        const calculatedChange = price - prevClose;
+        
+        // Tolerance for float errors
+        if (Math.abs(calculatedChange) > 0.000001) {
+            change = calculatedChange;
+            changePercent = (calculatedChange / prevClose) * 100;
         }
     }
-    return quote;
+
+    return {
+        price,
+        change,
+        changePercent,
+        previousClose: prevClose,
+        marketState: state
+    };
 };
 
 const providers = {
@@ -202,13 +220,7 @@ const providers = {
             if (data?.lastPrice) {
                 const price = parseFloat(data.lastPrice);
                 const prev = parseFloat(data.prevClosePrice);
-                return calculateFallbackMetrics({
-                    price: price,
-                    change: parseFloat(data.priceChange),
-                    changePercent: parseFloat(data.priceChangePercent),
-                    previousClose: prev || price,
-                    marketState: MarketState.OPEN
-                });
+                return calculateRobustMetrics(price, prev, parseFloat(data.priceChange), parseFloat(data.priceChangePercent), MarketState.OPEN);
             }
         } catch (e) {}
         return null;
@@ -221,9 +233,7 @@ const providers = {
                 const price = parseFloat(data.data.priceUsd);
                 const changePerc = parseFloat(data.data.changePercent24Hr);
                 const prev = price / (1 + (changePerc / 100));
-                return calculateFallbackMetrics({
-                    price, change: price - prev, changePercent: changePerc, previousClose: prev, marketState: MarketState.OPEN
-                });
+                return calculateRobustMetrics(price, prev, price - prev, changePerc, MarketState.OPEN);
             }
         } catch (e) {}
         return null;
@@ -238,7 +248,7 @@ const providers = {
                 const change = parseFloat(data.data.changePrice);
                 const changePercent = parseFloat(data.data.changeRate) * 100;
                 const prevClose = price - change;
-                return { price, change, changePercent, previousClose: prevClose, marketState: MarketState.OPEN };
+                return calculateRobustMetrics(price, prevClose, change, changePercent, MarketState.OPEN);
             }
         } catch (e) {}
         return null;
@@ -251,13 +261,8 @@ const providers = {
             if (data && data[coinId]) {
                 const price = data[coinId].usd;
                 const changePerc = data[coinId].usd_24h_change;
-                return calculateFallbackMetrics({
-                    price: price,
-                    change: price * (changePerc/100),
-                    changePercent: changePerc,
-                    previousClose: price / (1 + (changePerc/100)),
-                    marketState: MarketState.OPEN
-                });
+                const prev = price / (1 + (changePerc/100));
+                return calculateRobustMetrics(price, prev, price - prev, changePerc, MarketState.OPEN);
             }
         } catch (e) {}
         return null;
@@ -278,13 +283,14 @@ const providers = {
                 if (state === MarketState.PRE && q.preMarketPrice) finalPrice = q.preMarketPrice;
                 if (state === MarketState.POST && q.postMarketPrice) finalPrice = q.postMarketPrice;
 
-                return calculateFallbackMetrics({
-                    price: finalPrice,
-                    change: q.regularMarketChange || (finalPrice - prev),
-                    changePercent: q.regularMarketChangePercent || 0,
-                    previousClose: prev,
-                    marketState: state
-                });
+                // Force calculation using Previous Close to fix 0% bug on ETFs/Stocks
+                return calculateRobustMetrics(
+                    finalPrice, 
+                    prev, 
+                    q.regularMarketChange, 
+                    q.regularMarketChangePercent, 
+                    state
+                );
             }
         } catch (e) {}
         return null;
@@ -296,13 +302,13 @@ const providers = {
             if (r) {
                 const price = r.regularMarketPrice || 0;
                 const prev = r.regularMarketPreviousClose || price;
-                return calculateFallbackMetrics({
-                    price: price,
-                    change: r.regularMarketChange || (price - prev),
-                    changePercent: r.regularMarketChangePercent || 0,
-                    previousClose: prev,
-                    marketState: MarketState.REGULAR
-                });
+                return calculateRobustMetrics(
+                    price, 
+                    prev, 
+                    r.regularMarketChange, 
+                    r.regularMarketChangePercent, 
+                    MarketState.REGULAR
+                );
             }
         } catch (e) {}
         return null;
@@ -315,9 +321,14 @@ const providers = {
             if (result?.regularMarketPrice) {
                 const price = result.regularMarketPrice;
                 const prev = result.previousClose || price;
-                return calculateFallbackMetrics({
-                    price, change: price - prev, changePercent: 0, previousClose: prev, marketState: MarketState.REGULAR
-                });
+                // Chart API guarantees previousClose, so calculation is solid here
+                return calculateRobustMetrics(
+                    price, 
+                    prev, 
+                    price - prev, 
+                    ((price - prev) / prev) * 100, 
+                    MarketState.REGULAR
+                );
             }
         } catch(e) {}
         return null;
@@ -406,6 +417,7 @@ export const financialApi = {
                 for (const provider of sources) {
                     const q = await provider(type === 'CRYPTO' && provider === providers.yahoo ? `${symbol}-USD` : symbol);
                     if (q) {
+                        // HUNTER ALGORITHM: Prefer quotes with actual change data
                         if (Math.abs(q.changePercent) > 0.00001) {
                             quote = q; break; 
                         } else if (!quote) {
@@ -414,21 +426,20 @@ export const financialApi = {
                     }
                 }
             } else if (type === 'BR') {
+                // BR priority: Brapi -> Yahoo
                 quote = await providers.brapi(symbol) || await providers.yahoo(symbol);
             } else {
+                // US/Global priority: Yahoo -> Chart Fallback
                 quote = await providers.yahoo(symbol);
             }
 
-            if (!quote || quote.price === 0) {
-                quote = await providers.chartFallback(symbol);
+            // Fallback to Chart API if Quote API fails or returns 0 change
+            if (!quote || quote.price === 0 || (quote.change === 0 && type !== 'CRYPTO')) {
+                const chartQ = await providers.chartFallback(symbol);
+                if (chartQ) quote = chartQ;
             }
 
             if (quote) {
-                if (Math.abs(quote.changePercent) < 0.00001 && quote.price > 0 && quote.previousClose > 0) {
-                    const diff = quote.price - quote.previousClose;
-                    quote.change = diff;
-                    quote.changePercent = (diff / quote.previousClose) * 100;
-                }
                 cache.quotes[rawTicker] = { data: quote, timestamp: now };
                 result[rawTicker] = quote;
             }
@@ -462,7 +473,7 @@ export const financialApi = {
         if (range === '1D') {
             // 24 Hours Rolling Window for full day visual
             startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000); 
-            interval = '5m'; // High Granularity
+            interval = '5m'; 
         } else if (range === '5D') {
             startTime.setDate(now.getDate() - 5);
             interval = '15m';
@@ -480,7 +491,6 @@ export const financialApi = {
         const uniqueTickers = Array.from(new Set(transactions.map(t => t.ticker)));
         const assetHistoryMap: Record<string, { timestamp: number[], close: number[] }> = {};
 
-        // 1. Fetch History
         await Promise.all(uniqueTickers.map(async (ticker) => {
             const { symbol, type } = normalizeTicker(ticker);
             const apiSymbol = type === 'CRYPTO' ? `${symbol}-USD` : symbol;
@@ -497,13 +507,12 @@ export const financialApi = {
             } catch (e) {}
         }));
 
-        // 2. SNAPSHOT MODE: Apply CURRENT holdings to historical prices (Continuous Trend Line)
+        // SNAPSHOT MODE: Apply CURRENT holdings to historical prices
         const currentHoldings: Record<string, number> = {};
         transactions.forEach(tx => {
             currentHoldings[tx.ticker] = (currentHoldings[tx.ticker] || 0) + tx.quantity;
         });
 
-        // 3. Generate Timeline
         let timeline: number[] = [];
         const timestamps = Object.values(assetHistoryMap).flatMap(h => h.timestamp);
         if (timestamps.length > 0) {
@@ -565,7 +574,6 @@ export const financialApi = {
             }
         });
 
-        // Ensure endpoint matches current value
         if (currentQuotes) {
             let liveValue = 0;
             Object.keys(currentHoldings).forEach(t => {

@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { Transaction, Holding, Asset, Quote } from '../types';
 import { financialApi } from '../services/financialApi';
@@ -403,14 +404,12 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                      const price = Number(quote.price) || 0;
                      
                      if (isToday) {
+                         // Se comprou HOJE, a variação é Preço Atual - Preço Pago
                          const txPrice = Number(t.price) || 0;
                          holdingDayChange += (price - txPrice) * t.quantity;
                      } else {
-                         let dailyDiff = quote.change;
-                         if (dailyDiff === 0 && quote.price > 0 && quote.previousClose > 0) {
-                             dailyDiff = quote.price - quote.previousClose;
-                         }
-                         holdingDayChange += dailyDiff * t.quantity;
+                         // Se comprou ANTES, a variação é o Change do dia fornecido pela API (já calculado robustamente)
+                         holdingDayChange += quote.change * t.quantity;
                      }
                  } catch (e) {}
               });
