@@ -104,14 +104,21 @@ const Reports: React.FC = () => {
                 return;
             }
 
+            // 1. Fetch Snapshot History (Current Holdings projected to past)
             const history = await financialApi.getPortfolioPriceHistory(transactions, fxRate, 'ALL');
             
+            // 2. Calculate Total Current Invested (Reference for Scaling)
+            const totalCurrentInvested = transactions.reduce((acc, t) => acc + t.totalCost, 0);
+
+            // 3. Sort Transactions
             const sortedTx = [...transactions].sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
             const firstTxDate = sortedTx.length > 0 ? new Date(sortedTx[0].dateTime) : new Date();
             
+            // 4. Setup Date Markers
             const getMonthId = (d: Date) => d.getFullYear() * 100 + (d.getMonth() + 1);
             const startMonthId = getMonthId(firstTxDate);
 
+            // 5. Group Investments by Month
             const contributionsByMonth: Record<string, number> = {};
             transactions.forEach(tx => {
                 const date = new Date(tx.dateTime);
@@ -122,13 +129,14 @@ const Reports: React.FC = () => {
                 contributionsByMonth[key] += cost;
             });
 
+            // 6. Group History Snapshots by Month
             const groupedHistory: Record<string, any> = {};
             history.forEach(point => {
                 const date = new Date(point.date);
                 const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
                 groupedHistory[key] = {
                     dateKey: key,
-                    netWorth: point.price,
+                    snapshotValue: point.price, // This is the value of TODAY's portfolio at THAT time
                     displayDate: date.toLocaleDateString(settings.language, { month: 'short', year: '2-digit' })
                 };
             });
@@ -145,10 +153,9 @@ const Reports: React.FC = () => {
                 runningInvested += contribution;
                 
                 const historyPoint = groupedHistory[key] || {};
-                let netWorth = historyPoint.netWorth || runningInvested;
+                const rawSnapshotValue = historyPoint.snapshotValue || 0;
                 
-                // LOGIC: Ghost Profit Fix
-                // 1. Before first investment -> All Zeros
+                // FILTER 1: Before First Investment -> Zero
                 if (currentMonthId < startMonthId) {
                     return {
                         dateKey: key,
@@ -159,7 +166,7 @@ const Reports: React.FC = () => {
                     };
                 }
 
-                // 2. If Invested is Zero -> Gain is Zero
+                // FILTER 2: Zero Invested -> Zero Gain
                 if (runningInvested <= 0) {
                      return {
                         dateKey: key,
@@ -170,28 +177,25 @@ const Reports: React.FC = () => {
                     };
                 }
 
-                let gain = netWorth - runningInvested;
+                // RATIO SCALING LOGIC (The fix for "Ghost Profits")
+                // We scale the Snapshot Value down based on how much money was actually invested at that time
+                // vs how much money is invested today.
+                let adjustedNetWorth = rawSnapshotValue;
                 
-                // Scaling logic to prevent massive ghost profits from recent purchases affecting past history
-                // (Snapshot correction estimate)
-                const totalCurrentInvested = sortedTx.reduce((acc, t) => acc + t.totalCost, 0);
-                if (totalCurrentInvested > 0 && runningInvested > 0) {
-                     const ratio = runningInvested / totalCurrentInvested;
-                     // If this month's invested is significantly lower than total, scale netWorth
-                     // This assumes portfolio comp stays somewhat similar or just scales market cap
-                     // It prevents "I bought BTC in 2025, why is 2023 profit huge?"
-                     if (gain > 0) {
-                         // Recalculate gain proportionally to investment at the time
-                         // Not perfect but better than full snapshot
-                     }
+                if (totalCurrentInvested > 0) {
+                    const ratio = runningInvested / totalCurrentInvested;
+                    adjustedNetWorth = rawSnapshotValue * ratio;
                 }
 
+                // Calculate Gain based on Adjusted Value
+                let gain = adjustedNetWorth - runningInvested;
+                
                 return {
                     dateKey: key,
                     displayDate: historyPoint.displayDate || key,
                     invested: runningInvested,
-                    gain: gain > 0 ? gain : 0,
-                    totalValue: netWorth
+                    gain: gain > 0 ? gain : 0, // Stacked bar only shows positive gain
+                    totalValue: adjustedNetWorth
                 };
             });
 
@@ -272,6 +276,8 @@ const Reports: React.FC = () => {
                                     labelStyle={{ color: '#8B949E', marginBottom: '5px' }}
                                 />
                                 <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px', fontWeight: 500, color: '#C9D1D9' }} />
+                                
+                                {/* Valor Aplicado (Base) */}
                                 <Bar 
                                     dataKey="invested" 
                                     name={t('appliedValue')} 
@@ -280,6 +286,8 @@ const Reports: React.FC = () => {
                                     radius={[0, 0, 0, 0]} 
                                     barSize={20} 
                                 />
+                                
+                                {/* Ganho de Capital (Topo) */}
                                 <Bar 
                                     dataKey="gain" 
                                     name={t('capitalGain')} 
