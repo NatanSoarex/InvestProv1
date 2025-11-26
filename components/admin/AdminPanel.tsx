@@ -44,8 +44,6 @@ create table if not exists public.profiles (
 );
 
 -- 1.1 TRAVA DE SEGURANÇA ANTI-DUPLICIDADE (IMPORTANTE)
--- Remove duplicatas antigas se houver (opcional, por segurança)
--- Adiciona restrição única no banco de dados
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'unique_username') THEN
@@ -83,12 +81,16 @@ create table if not exists public.suggestions (
 drop policy if exists "Perfis publicos" on public.profiles;
 drop policy if exists "Usuario atualiza proprio perfil" on public.profiles;
 drop policy if exists "Admin ve todos perfis" on public.profiles;
+drop policy if exists "Admin atualiza todos perfis" on public.profiles; -- Clean old update policy
+
 drop policy if exists "Usuario ve suas transacoes" on public.transactions;
 drop policy if exists "Usuario cria suas transacoes" on public.transactions;
 drop policy if exists "Usuario deleta suas transacoes" on public.transactions;
+
 drop policy if exists "Usuario ve sua watchlist" on public.watchlist;
 drop policy if exists "Usuario cria na watchlist" on public.watchlist;
 drop policy if exists "Usuario deleta da watchlist" on public.watchlist;
+
 drop policy if exists "Admin ve sugestoes" on public.suggestions;
 drop policy if exists "Usuario envia sugestao" on public.suggestions;
 
@@ -98,11 +100,12 @@ alter table public.transactions enable row level security;
 alter table public.watchlist enable row level security;
 alter table public.suggestions enable row level security;
 
--- 4. Criar Novas Políticas (Fix Visibility)
+-- 4. Criar Novas Políticas (Fix Visibility & Updates)
 create policy "Perfis publicos" on public.profiles for select using (true);
 create policy "Usuario atualiza proprio perfil" on public.profiles for update using (auth.uid() = id);
--- Permite que o Admin (definido pelo ID ou flag) veja tudo
-create policy "Admin ve todos perfis" on public.profiles for select using (true); 
+create policy "Admin ve todos perfis" on public.profiles for select using (true);
+-- MEGA FIX: Permite Admin atualizar assinatura e banimento
+create policy "Admin atualiza todos perfis" on public.profiles for update using ((select is_admin from public.profiles where id = auth.uid()) = true);
 
 create policy "Usuario ve suas transacoes" on public.transactions for select using (auth.uid() = user_id);
 create policy "Usuario cria suas transacoes" on public.transactions for insert with check (auth.uid() = user_id);
@@ -128,7 +131,7 @@ begin
     new.raw_user_meta_data->>'security_code',
     (new.raw_user_meta_data->>'username' = '@natansoarex')
   )
-  ON CONFLICT (id) DO NOTHING; -- Evita erro se o frontend ja tiver criado
+  ON CONFLICT (id) DO NOTHING; 
   return new;
 end;
 $$ language plpgsql security definer;
@@ -158,7 +161,12 @@ ON CONFLICT DO NOTHING;
         alert("Script de Reparo Copiado!");
     };
 
-    // Diagnóstico de Erro
+    const handleTruncate = () => {
+        const truncateSQL = `TRUNCATE TABLE public.transactions, public.watchlist, public.suggestions, public.profiles CASCADE; DELETE FROM auth.users WHERE 1=1;`;
+        navigator.clipboard.writeText(truncateSQL);
+        alert("CUIDADO! Script de RESET TOTAL copiado. Use com extrema cautela.");
+    }
+
     const showDbSetup = dbError && (dbError.includes('42P01') || users.length === 0);
 
     return (
@@ -376,6 +384,17 @@ ON CONFLICT DO NOTHING;
                             )}
                         </div>
                     )}
+
+                    {/* Danger Zone */}
+                    <div className="mt-4 pt-4 border-t border-brand-border/30 flex justify-between items-center">
+                        <p className="text-[10px] text-brand-secondary opacity-50">Zona de Perigo</p>
+                        <button 
+                            onClick={handleTruncate}
+                            className="text-[10px] text-brand-danger hover:underline opacity-50 hover:opacity-100"
+                        >
+                            Copiar Script de Reset Total
+                        </button>
+                    </div>
 
                 </div>
             </div>

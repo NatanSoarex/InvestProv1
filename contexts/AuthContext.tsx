@@ -420,10 +420,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateUserSubscription = async (userId: string, days: number) => {
       const expiryDate = new Date(Date.now() + (days * 24 * 60 * 60 * 1000)).toISOString();
+      
       if (isSupabaseConfigured) {
           await supabase.from('profiles').update({ subscription_expires_at: expiryDate }).eq('id', userId);
-          setUsers(prev => prev.map(u => u.id === userId ? { ...u, subscriptionExpiresAt: expiryDate } : u));
-      } else {
+      } 
+      
+      // UPDATE LIST
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, subscriptionExpiresAt: expiryDate } : u));
+
+      // MEGA FIX: UPDATE CURRENT USER IMMEDIATELY IF IT IS ME
+      if (currentUser && currentUser.id === userId) {
+          setCurrentUser(prev => prev ? ({ ...prev, subscriptionExpiresAt: expiryDate }) : null);
+      } else if (!isSupabaseConfigured) {
+          // Local storage logic fallback
           const updated = users.map(u => u.id === userId ? { ...u, subscriptionExpiresAt: expiryDate } : u);
           saveLocalUsers(updated);
       }
