@@ -106,13 +106,14 @@ const Reports: React.FC = () => {
                 return;
             }
 
-            // 1. Get Full Price History
+            // 1. Get Full Price History (Mode: All Time)
             const history = await financialApi.getPortfolioPriceHistory(transactions, fxRate, 'ALL');
             
             // 2. Calculate Monthly Data
             const groupedHistory: Record<string, any> = {};
             const contributionsByMonth: Record<string, number> = {};
             
+            // Group transactions by month to calculate Accumulated Invested
             transactions.forEach(tx => {
                 const date = new Date(tx.dateTime);
                 const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -122,9 +123,11 @@ const Reports: React.FC = () => {
                 contributionsByMonth[key] += cost;
             });
 
+            // Group history by month to find Net Worth at end of month
             history.forEach(point => {
                 const date = new Date(point.date);
                 const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                // Keep updating netWorth so the last point of the month wins
                 groupedHistory[key] = {
                     dateKey: key,
                     netWorth: point.price, 
@@ -144,7 +147,7 @@ const Reports: React.FC = () => {
                 const netWorth = historyPoint.netWorth || runningInvested;
                 
                 // STACKED BAR LOGIC (Investidor 10 Style)
-                // Base: Invested Amount
+                // Base: Invested Amount (Valor Aplicado)
                 // Top: Capital Gain (if positive)
                 
                 let investedBar = runningInvested;
@@ -153,7 +156,7 @@ const Reports: React.FC = () => {
                 if (netWorth > runningInvested) {
                     gainBar = netWorth - runningInvested;
                 } 
-                // Note: If netWorth < invested, the gainBar is 0, and InvestedBar shows full amount (loss is implied by area not reaching top, or we could adjust investedBar to show loss, but Investidor 10 usually stacks gain on top).
+                // Note: If netWorth < invested, gainBar is 0. 
                 
                 return {
                     dateKey: key,
