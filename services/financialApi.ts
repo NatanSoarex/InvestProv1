@@ -1,4 +1,3 @@
-
 import { Asset, Quote, AssetClass, HistoricalDataPoint, Transaction, MarketState } from '../types';
 
 const YAHOO_QUOTE_API = 'https://query1.finance.yahoo.com/v7/finance/quote';
@@ -111,9 +110,9 @@ export const TOP_ASSETS_FALLBACK = [
     { t: 'VOO', n: 'Vanguard S&P 500', c: AssetClass.ETF }, { t: 'IVVB11', n: 'iShares S&P 500', c: AssetClass.ETF }
 ];
 
-const smartFetch = async (url: string, useProxy = true, timeoutMs = 2500) => {
+const smartFetch = async (url: string, useProxy = true, timeoutMs = 2000) => {
     const separator = url.includes('?') ? '&' : '?';
-    const bust = `_t=${Date.now()}`; 
+    const bust = `_t=${Date.now()}-${Math.random()}`; 
     const finalUrl = `${url}${separator}${bust}`;
 
     const fetchWithTimeout = async (fetchUrl: string) => {
@@ -461,8 +460,9 @@ export const financialApi = {
         let interval = '1d';
         
         if (range === '1D') {
-            startTime.setHours(0, 0, 0, 0); 
-            interval = '2m'; 
+            // 24 Hours Rolling Window for full day visual
+            startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000); 
+            interval = '5m'; // High Granularity
         } else if (range === '5D') {
             startTime.setDate(now.getDate() - 5);
             interval = '15m';
