@@ -1,5 +1,4 @@
 
-
 import React, { useMemo, useState, useEffect } from 'react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { Card, CardHeader, CardContent } from '../ui/Card';
@@ -114,6 +113,11 @@ const Reports: React.FC = () => {
             const groupedHistory: Record<string, any> = {};
             const contributionsByMonth: Record<string, number> = {};
             
+            // Determine Start Date (First Transaction)
+            const sortedTx = [...transactions].sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
+            const firstTxDate = sortedTx.length > 0 ? new Date(sortedTx[0].dateTime) : new Date();
+            const startMonthKey = `${firstTxDate.getFullYear()}-${String(firstTxDate.getMonth() + 1).padStart(2, '0')}`;
+
             // Group transactions by month to calculate Accumulated Invested
             transactions.forEach(tx => {
                 const date = new Date(tx.dateTime);
@@ -145,19 +149,34 @@ const Reports: React.FC = () => {
                 runningInvested += contribution;
                 
                 const historyPoint = groupedHistory[key] || {};
-                const netWorth = historyPoint.netWorth || runningInvested;
+                let netWorth = historyPoint.netWorth || runningInvested;
                 
+                // STRICT FIX: Zero out everything before the first investment month
+                if (key < startMonthKey) {
+                    runningInvested = 0;
+                    return {
+                        dateKey: key,
+                        displayDate: historyPoint.displayDate || key,
+                        invested: 0,
+                        gain: 0,
+                        totalValue: 0
+                    };
+                }
+
                 // STACKED BAR LOGIC (Investidor 10 Style)
-                // Base: Invested Amount (Valor Aplicado)
-                // Top: Capital Gain (if positive)
-                
                 let investedBar = runningInvested;
                 let gainBar = 0;
                 
-                if (netWorth > runningInvested) {
-                    gainBar = netWorth - runningInvested;
-                } 
-                // Note: If netWorth < invested, gainBar is 0. 
+                // Logic: If Total Invested is 0, Gain MUST be 0.
+                if (runningInvested > 0) {
+                    if (netWorth > runningInvested) {
+                        gainBar = netWorth - runningInvested;
+                    }
+                } else {
+                    investedBar = 0;
+                    gainBar = 0;
+                    netWorth = 0;
+                }
                 
                 return {
                     dateKey: key,
@@ -168,8 +187,9 @@ const Reports: React.FC = () => {
                 };
             });
 
-            const firstNonZeroIndex = finalData.findIndex(d => d.totalValue > 0);
-            const trimmedData = firstNonZeroIndex >= 0 ? finalData.slice(firstNonZeroIndex) : [];
+            // Filter out empty trailing/leading months if needed, but keep the logic strict
+            const firstRealDataIndex = finalData.findIndex(d => d.totalValue > 0 || d.invested > 0);
+            const trimmedData = firstRealDataIndex >= 0 ? finalData.slice(firstRealDataIndex) : [];
 
             setMonthlyData(trimmedData);
             setIsLoading(false);

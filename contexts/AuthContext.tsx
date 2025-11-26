@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User, Suggestion } from '../types';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
@@ -382,12 +383,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    // 1. UI First: Remove usuário da tela imediatamente
     setCurrentUser(null);
     
+    // 2. Limpar navegação persistida
+    localStorage.removeItem('provest_last_view');
+
+    // 3. Background: Limpa sessão no servidor
     if (isSupabaseConfigured) {
         try {
             await supabase.auth.signOut();
         } catch (e) {
+            // Erro silencioso (já saiu visualmente)
         }
     } else {
         localStorage.removeItem('provest_session');

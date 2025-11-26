@@ -19,20 +19,21 @@ const Profile = React.lazy(() => import('./components/profile/Profile'));
 export type View = 'dashboard' | 'portfolio' | 'search' | 'watchlist' | 'reports' | 'projections' | 'profile';
 
 const AuthenticatedApp: React.FC = () => {
-  const [currentView, setCurrentView] = useState<View>('dashboard');
+  // FIX: Initialize view from localStorage to persist state on F5 refresh
+  const [currentView, setCurrentView] = useState<View>(() => {
+      const savedView = localStorage.getItem('provest_last_view');
+      return (savedView as View) || 'dashboard';
+  });
+  
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const { currentUser, isLoading } = useAuth();
 
-  // FORCE DASHBOARD ON LOGIN - Corrigido para garantir redirecionamento
+  // FIX: Save current view to localStorage whenever it changes
   useEffect(() => {
-      if (currentUser) {
-          // Pequeno delay para garantir que a renderização não conflite
-          const timer = setTimeout(() => {
-              setCurrentView('dashboard');
-          }, 100);
-          return () => clearTimeout(timer);
+      if (currentView) {
+          localStorage.setItem('provest_last_view', currentView);
       }
-  }, [currentUser?.id]); 
+  }, [currentView]);
 
   // Loading Spinner to prevent flicker or logout
   if (isLoading) {
