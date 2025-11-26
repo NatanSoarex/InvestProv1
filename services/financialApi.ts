@@ -28,28 +28,89 @@ const cache = {
     assets: {} as Record<string, Asset>,
 };
 
+// Expanded Logo Map for High Quality Asset Icons
 const LOGO_MAP: Record<string, string> = {
+    // Crypto
     'BTC': 'https://assets.coingecko.com/coins/images/1/large/bitcoin.png',
     'ETH': 'https://assets.coingecko.com/coins/images/279/large/ethereum.png',
     'SOL': 'https://assets.coingecko.com/coins/images/4128/large/solana.png',
     'USDT': 'https://assets.coingecko.com/coins/images/325/large/Tether.png',
     'BNB': 'https://assets.coingecko.com/coins/images/825/large/binance-coin-logo.png',
     'XRP': 'https://assets.coingecko.com/coins/images/44/large/xrp-symbol-white-128.png',
+    'ADA': 'https://assets.coingecko.com/coins/images/975/large/cardano.png',
+    'DOGE': 'https://assets.coingecko.com/coins/images/5/large/dogecoin.png',
+    'AVAX': 'https://assets.coingecko.com/coins/images/12559/large/avalance-1.png',
+    'LINK': 'https://assets.coingecko.com/coins/images/877/large/chainlink-new-logo.png',
+
+    // Brazilian Stocks (Blue Chips)
     'PETR4': 'https://s3-symbol-logo.tradingview.com/petrobras--big.svg',
     'VALE3': 'https://s3-symbol-logo.tradingview.com/vale--big.svg',
     'ITUB4': 'https://s3-symbol-logo.tradingview.com/itau-unibanco--big.svg',
+    'BBDC4': 'https://s3-symbol-logo.tradingview.com/banco-bradesco--big.svg',
+    'BBAS3': 'https://s3-symbol-logo.tradingview.com/banco-brasil--big.svg',
+    'WEGE3': 'https://s3-symbol-logo.tradingview.com/weg--big.svg',
+    'ABEV3': 'https://s3-symbol-logo.tradingview.com/ambev--big.svg',
+    'ALOS3': 'https://s3-symbol-logo.tradingview.com/aliansce-sonae--big.svg',
+    'RENT3': 'https://s3-symbol-logo.tradingview.com/localiza--big.svg',
+    'JBSS3': 'https://s3-symbol-logo.tradingview.com/jbs--big.svg',
+    'ELET3': 'https://s3-symbol-logo.tradingview.com/eletrobras--big.svg',
+    'NU': 'https://s3-symbol-logo.tradingview.com/nu-holdings--big.svg',
+    'ROXO34': 'https://s3-symbol-logo.tradingview.com/nu-holdings--big.svg',
+
+    // Brazilian FIIs & ETFs
     'MXRF11': 'https://s3-symbol-logo.tradingview.com/xp-investimentos--big.svg',
     'HGLG11': 'https://s3-symbol-logo.tradingview.com/credit-suisse--big.svg',
-    'AAPL': 'https://logo.clearbit.com/apple.com',
-    'MSFT': 'https://logo.clearbit.com/microsoft.com',
-    'NVDA': 'https://logo.clearbit.com/nvidia.com',
-    'TSLA': 'https://logo.clearbit.com/tesla.com',
-    'VOO': 'https://logo.clearbit.com/vanguard.com',
-    'QQQ': 'https://logo.clearbit.com/invesco.com',
+    'KNCR11': 'https://s3-symbol-logo.tradingview.com/kinea--big.svg',
+    'XPLG11': 'https://s3-symbol-logo.tradingview.com/xp-investimentos--big.svg',
     'IVVB11': 'https://s3-symbol-logo.tradingview.com/ishares--big.svg',
     'BOVA11': 'https://s3-symbol-logo.tradingview.com/ishares--big.svg',
     'SMAL11': 'https://s3-symbol-logo.tradingview.com/ishares--big.svg',
-    'ALOS3': 'https://s3-symbol-logo.tradingview.com/aliansce-sonae--big.svg'
+    'HASH11': 'https://s3-symbol-logo.tradingview.com/hashdex--big.svg',
+    'XINA11': 'https://s3-symbol-logo.tradingview.com/xp-investimentos--big.svg',
+
+    // Global Tech
+    'AAPL': 'https://logo.clearbit.com/apple.com',
+    'MSFT': 'https://logo.clearbit.com/microsoft.com',
+    'NVDA': 'https://logo.clearbit.com/nvidia.com',
+    'GOOGL': 'https://logo.clearbit.com/abc.xyz',
+    'GOOG': 'https://logo.clearbit.com/abc.xyz',
+    'AMZN': 'https://logo.clearbit.com/amazon.com',
+    'TSLA': 'https://logo.clearbit.com/tesla.com',
+    'META': 'https://logo.clearbit.com/meta.com',
+    'NFLX': 'https://logo.clearbit.com/netflix.com',
+    'AMD': 'https://logo.clearbit.com/amd.com',
+    'INTC': 'https://logo.clearbit.com/intel.com',
+
+    // Major US ETFs (Mapped to Issuer Logos for Consistency)
+    // Vanguard
+    'VOO': 'https://logo.clearbit.com/vanguard.com',
+    'VTI': 'https://logo.clearbit.com/vanguard.com',
+    'VGT': 'https://logo.clearbit.com/vanguard.com',
+    'VNQ': 'https://logo.clearbit.com/vanguard.com',
+    'BND': 'https://logo.clearbit.com/vanguard.com',
+    'VUG': 'https://logo.clearbit.com/vanguard.com',
+    'VYM': 'https://logo.clearbit.com/vanguard.com',
+    // Invesco
+    'QQQ': 'https://logo.clearbit.com/invesco.com',
+    'QQQM': 'https://logo.clearbit.com/invesco.com',
+    // SPDR (State Street)
+    'SPY': 'https://logo.clearbit.com/ssga.com',
+    'DIA': 'https://logo.clearbit.com/ssga.com',
+    'GLD': 'https://logo.clearbit.com/ssga.com',
+    'XLE': 'https://logo.clearbit.com/ssga.com',
+    'XLF': 'https://logo.clearbit.com/ssga.com',
+    'XLK': 'https://logo.clearbit.com/ssga.com',
+    // iShares (BlackRock)
+    'IVV': 'https://logo.clearbit.com/ishares.com',
+    'EEM': 'https://logo.clearbit.com/ishares.com',
+    'TLT': 'https://logo.clearbit.com/ishares.com',
+    'IWM': 'https://logo.clearbit.com/ishares.com',
+    // Others
+    'SCHD': 'https://logo.clearbit.com/schwab.com',
+    'JEPI': 'https://logo.clearbit.com/jpmorgan.com',
+    'ARKK': 'https://logo.clearbit.com/ark-invest.com',
+    'SMH': 'https://logo.clearbit.com/vaneck.com',
+    'COIN': 'https://logo.clearbit.com/coinbase.com',
 };
 
 export const TOP_ASSETS_FALLBACK = [
@@ -97,7 +158,20 @@ const smartFetch = async (url: string, useProxy = true, timeoutMs = 2500) => {
 
 const resolveLogo = (ticker: string, name: string): string => {
     const t = ticker.toUpperCase().replace('.SA', '').replace('-USD', '').trim();
+    
+    // Direct map hit
     if (LOGO_MAP[t]) return LOGO_MAP[t];
+    
+    // Heuristics for ETFs/Funds based on Name
+    const lowerName = name.toLowerCase();
+    if (lowerName.includes('vanguard')) return 'https://logo.clearbit.com/vanguard.com';
+    if (lowerName.includes('ishares') || lowerName.includes('blackrock')) return 'https://logo.clearbit.com/ishares.com';
+    if (lowerName.includes('invesco')) return 'https://logo.clearbit.com/invesco.com';
+    if (lowerName.includes('spdr') || lowerName.includes('state street')) return 'https://logo.clearbit.com/ssga.com';
+    if (lowerName.includes('schwab')) return 'https://logo.clearbit.com/schwab.com';
+    if (lowerName.includes('ark ')) return 'https://logo.clearbit.com/ark-invest.com';
+    if (lowerName.includes('global x')) return 'https://logo.clearbit.com/globalxetfs.com';
+
     let domain = ticker.includes('.SA') ? `${t.toLowerCase()}.com.br` : `${t.toLowerCase()}.com`;
     return `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
 };
@@ -107,7 +181,7 @@ const normalizeTicker = (ticker: string) => {
     const cryptoMatch = TOP_ASSETS_FALLBACK.find(a => a.t === t && a.c === AssetClass.CRYPTO);
     if (cryptoMatch) return { symbol: t, type: 'CRYPTO' };
     
-    if (['BTC','ETH','SOL','BNB','XRP','USDT','USDC'].includes(t)) return { symbol: t, type: 'CRYPTO' };
+    if (['BTC','ETH','SOL','BNB','XRP','USDT','USDC','ADA','DOGE','AVAX','LINK'].includes(t)) return { symbol: t, type: 'CRYPTO' };
     
     const brRegex = /^[A-Z]{4}(3|4|5|6|11)$/;
     if (t.endsWith('.SA')) return { symbol: t, type: 'BR' };
@@ -119,7 +193,18 @@ const normalizeTicker = (ticker: string) => {
 const getCryptoMapping = (ticker: string) => {
     const t = ticker.replace('-USD', '').toUpperCase();
     const binanceSymbol = ['USDT', 'USDC'].includes(t) ? `${t}USDC` : `${t}USDT`;
-    const coinId = { 'BTC': 'bitcoin', 'ETH': 'ethereum', 'SOL': 'solana', 'USDT': 'tether' }[t] || t.toLowerCase();
+    const coinId = { 
+        'BTC': 'bitcoin', 
+        'ETH': 'ethereum', 
+        'SOL': 'solana', 
+        'USDT': 'tether',
+        'BNB': 'binancecoin',
+        'XRP': 'ripple',
+        'ADA': 'cardano',
+        'DOGE': 'dogecoin',
+        'AVAX': 'avalanche-2',
+        'LINK': 'chainlink'
+    }[t] || t.toLowerCase();
     return { binanceSymbol, coinId };
 };
 
@@ -444,7 +529,6 @@ export const financialApi = {
         }));
 
         // 2. Snapshot Mode: Apply CURRENT holdings to historical prices
-        // This ensures the graph always shows market trends "Up and Down" for the selection
         const currentHoldings: Record<string, number> = {};
         transactions.forEach(tx => {
             currentHoldings[tx.ticker] = (currentHoldings[tx.ticker] || 0) + tx.quantity;
