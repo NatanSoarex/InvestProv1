@@ -103,6 +103,7 @@ export const translations = {
     worstMonth: 'Maior Queda',
     appliedValue: 'Valor Aplicado',
     capitalGain: 'Ganho de Capital',
+    monthlyBalance: 'Saldo do Mês',
 
     // Projections
     projectionsTitle: 'Projeções Futuras',
@@ -238,6 +239,7 @@ export const translations = {
     worstMonth: 'Worst Month',
     appliedValue: 'Applied Value',
     capitalGain: 'Capital Gain',
+    monthlyBalance: 'Monthly Balance',
 
     // Projections
     projectionsTitle: 'Future Projections',

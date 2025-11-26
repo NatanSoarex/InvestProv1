@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { Card, CardHeader, CardContent } from '../ui/Card';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell, CartesianGrid } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell, CartesianGrid, ComposedChart, Line } from 'recharts';
 import { Holding } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { financialApi } from '../../services/financialApi';
@@ -29,7 +29,7 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
         const invested = payload.find((p: any) => p.dataKey === 'invested')?.value || 0;
         const gain = payload.find((p: any) => p.dataKey === 'gain')?.value || 0;
-        const total = invested + gain; // O Saldo é a soma no Stacked Chart
+        const total = payload.find((p: any) => p.dataKey === 'totalValue')?.value || (invested + gain);
 
         return (
             <div className="bg-[#161B22] border border-[#30363D] p-3 rounded-lg shadow-xl min-w-[180px]">
@@ -44,12 +44,12 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
                 {/* 2. Ganho de Capital */}
                 <div className="flex justify-between items-center mb-2 border-b border-white/10 pb-2">
                     <span className="text-xs text-[#34D399] font-medium">● Ganho de Capital:</span>
-                    <span className="text-xs text-brand-text font-mono">+{formatCurrency(gain, 'USD')}</span>
+                    <span className="text-xs text-brand-text font-mono">{gain >= 0 ? '+' : ''}{formatCurrency(gain, 'USD')}</span>
                 </div>
 
                 {/* 3. Saldo Total (A 3ª Opção pedida) */}
                 <div className="flex justify-between items-center pt-1">
-                    <span className="text-sm text-white font-bold">Saldo Total:</span>
+                    <span className="text-sm text-white font-bold">Saldo do Mês:</span>
                     <span className="text-sm text-brand-primary font-bold font-mono">{formatCurrency(total, 'USD')}</span>
                 </div>
             </div>
@@ -282,7 +282,7 @@ const Reports: React.FC = () => {
                 <CardContent className="h-[400px]">
                     {monthlyData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={monthlyData} margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
+                            <ComposedChart data={monthlyData} margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#30363D" opacity={0.3} vertical={false} />
                                 <XAxis 
                                     dataKey="displayDate" 
@@ -321,7 +321,18 @@ const Reports: React.FC = () => {
                                     radius={[4, 4, 0, 0]} 
                                     barSize={20} 
                                 />
-                            </BarChart>
+
+                                {/* Line: Saldo do Mês (Total Value) - Visual Cue for 3rd Option */}
+                                <Line
+                                    type="monotone"
+                                    dataKey="totalValue"
+                                    name={t('monthlyBalance')}
+                                    stroke="#3B82F6"
+                                    strokeWidth={2}
+                                    dot={{ r: 2, fill: '#3B82F6' }}
+                                    activeDot={{ r: 4 }}
+                                />
+                            </ComposedChart>
                         </ResponsiveContainer>
                     ) : (
                         <div className="flex items-center justify-center h-full text-brand-secondary flex-col gap-2">
