@@ -28,7 +28,7 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
         const invested = payload.find((p: any) => p.dataKey === 'invested')?.value || 0;
         const gain = payload.find((p: any) => p.dataKey === 'gain')?.value || 0;
-        const total = payload.find((p: any) => p.dataKey === 'totalValue')?.value || (invested + gain);
+        const total = invested + gain;
 
         return (
             <div className="bg-[#161B22] border border-[#30363D] p-3 rounded-lg shadow-xl min-w-[180px]">
@@ -134,16 +134,17 @@ const Reports: React.FC = () => {
                 return;
             }
 
-            // 1. Fetch Snapshot History
+            // 1. Fetch Snapshot History (Current holdings projected to past)
             const history = await financialApi.getPortfolioPriceHistory(transactions, fxRate, 'ALL');
             
-            // 2. Calculate Total Current Invested
+            // 2. Calculate Total Current Invested (For Ratio Scaling)
             const totalCurrentInvested = transactions.reduce((acc, t) => acc + t.totalCost, 0);
 
-            // 3. Sort Transactions
+            // 3. Find First Transaction Date (Absolute Start)
             const sortedTx = [...transactions].sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
             const firstTxDate = sortedTx.length > 0 ? new Date(sortedTx[0].dateTime) : new Date();
             
+            // Create integer representation for comparison (YYYYMM)
             const getMonthId = (d: Date) => d.getFullYear() * 100 + (d.getMonth() + 1);
             const startMonthId = getMonthId(firstTxDate);
 
@@ -165,7 +166,7 @@ const Reports: React.FC = () => {
                 const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
                 groupedHistory[key] = {
                     dateKey: key,
-                    snapshotValue: point.price,
+                    snapshotValue: point.price, // This is inflated if we bought assets recently
                     displayDate: date.toLocaleDateString(settings.language, { month: 'short', year: '2-digit' })
                 };
             });
@@ -195,7 +196,7 @@ const Reports: React.FC = () => {
                     };
                 }
 
-                // If Total Invested is Zero, Gain must be Zero
+                // If Accumulated Invested is ZERO -> FORCE ZERO GAIN
                 if (runningInvested <= 0) {
                      return {
                         dateKey: key,
@@ -206,25 +207,28 @@ const Reports: React.FC = () => {
                     };
                 }
 
-                // RATIO SCALING to remove Ghost Profits
+                // RATIO SCALING: Corrects "Ghost Profits"
+                // If I have 100k invested today, but only had 10k invested in Jan 2023,
+                // the snapshot value needs to be scaled down by (10k/100k) = 0.1
                 let adjustedNetWorth = rawSnapshotValue;
                 if (totalCurrentInvested > 0) {
                     const ratio = runningInvested / totalCurrentInvested;
                     adjustedNetWorth = rawSnapshotValue * ratio;
                 }
 
-                // Calculate Gain
+                // Calculate Gain based on Adjusted Net Worth
                 let gain = adjustedNetWorth - runningInvested;
                 
                 return {
                     dateKey: key,
                     displayDate: historyPoint.displayDate || key,
                     invested: runningInvested,
-                    gain: gain > 0 ? gain : 0,
+                    gain: gain > 0 ? gain : 0, // Stacked Bar logic: only show positive gain on top
                     totalValue: adjustedNetWorth
                 };
             });
 
+            // Trim empty months at start
             const firstActiveIndex = finalData.findIndex(d => d.invested > 0);
             const trimmedData = firstActiveIndex >= 0 ? finalData.slice(firstActiveIndex) : [];
 
@@ -265,6 +269,7 @@ const Reports: React.FC = () => {
                 </Card>
             </div>
 
+            {/* CHART: Evolução Patrimonial (Investidor 10 Style - Stacked) */}
             <Card className="bg-brand-surface border-brand-border">
                 <CardHeader className="flex items-center gap-2 border-brand-border/30">
                     <div className="p-2 bg-brand-primary/10 rounded-lg text-brand-primary">
@@ -316,17 +321,7 @@ const Reports: React.FC = () => {
                                     radius={[4, 4, 0, 0]} 
                                     barSize={20} 
                                 />
-
-                                {/* Line: Saldo do Mês (Total Value) */}
-                                <Line
-                                    type="monotone"
-                                    dataKey="totalValue"
-                                    name={t('monthlyBalance')}
-                                    stroke="#3B82F6"
-                                    strokeWidth={2}
-                                    dot={{ r: 2, fill: '#3B82F6' }}
-                                    activeDot={{ r: 4 }}
-                                />
+                                
                             </ComposedChart>
                         </ResponsiveContainer>
                     ) : (
