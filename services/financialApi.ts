@@ -2,7 +2,7 @@
 import { Asset, Quote, AssetClass, HistoricalDataPoint, Transaction, MarketState } from '../types';
 
 // ============================================================================
-// PROVEST FINANCIAL ENGINE 13.0 (HIGH VOLATILITY CHART)
+// PROVEST FINANCIAL ENGINE 14.0 (SNAPSHOT MODE RESTORED)
 // ============================================================================
 
 // --- Endpoints ---
@@ -407,8 +407,9 @@ export const financialApi = {
         return 5.25; 
     },
 
-    // --- DASHBOARD HISTORY ENGINE (HIGH VOLATILITY MODE) ---
-    // Using 5m intervals for 1D to show the jagged 'Up and Down' line
+    // --- DASHBOARD HISTORY ENGINE (SNAPSHOT MODE) ---
+    // This mode applies CURRENT holdings to PAST prices to show the market trend line ("Up and Down")
+    // for the entire period, regardless of purchase date.
     getPortfolioPriceHistory: async (
         transactions: Transaction[], 
         fxRate: number, 

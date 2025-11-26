@@ -1,5 +1,6 @@
 
-import React, { useMemo, useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useMemo } from 'react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { Card, CardHeader, CardContent } from '../ui/Card';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell, CartesianGrid } from 'recharts';
@@ -106,19 +107,19 @@ const Reports: React.FC = () => {
                 return;
             }
 
-            // 1. Get Full Price History (Mode: All Time)
+            // 1. Get Full Price History (Snapshot Mode)
             const history = await financialApi.getPortfolioPriceHistory(transactions, fxRate, 'ALL');
             
-            // 2. Calculate Monthly Data
-            const groupedHistory: Record<string, any> = {};
-            const contributionsByMonth: Record<string, number> = {};
-            
-            // Determine Start Date (First Transaction)
+            // 2. Find First Transaction Date (Absolute Start)
             const sortedTx = [...transactions].sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
             const firstTxDate = sortedTx.length > 0 ? new Date(sortedTx[0].dateTime) : new Date();
-            const startMonthKey = `${firstTxDate.getFullYear()}-${String(firstTxDate.getMonth() + 1).padStart(2, '0')}`;
+            
+            // Create integer representation for comparison (YYYYMM)
+            const getMonthId = (d: Date) => d.getFullYear() * 100 + (d.getMonth() + 1);
+            const startMonthId = getMonthId(firstTxDate);
 
-            // Group transactions by month to calculate Accumulated Invested
+            // 3. Group Transactions by Month
+            const contributionsByMonth: Record<string, number> = {};
             transactions.forEach(tx => {
                 const date = new Date(tx.dateTime);
                 const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -128,32 +129,38 @@ const Reports: React.FC = () => {
                 contributionsByMonth[key] += cost;
             });
 
-            // Group history by month to find Net Worth at end of month
+            // 4. Group History by Month (End of Month Value)
+            const groupedHistory: Record<string, any> = {};
             history.forEach(point => {
                 const date = new Date(point.date);
                 const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-                // Keep updating netWorth so the last point of the month wins
                 groupedHistory[key] = {
                     dateKey: key,
-                    netWorth: point.price, 
+                    netWorth: point.price,
                     displayDate: date.toLocaleDateString(settings.language, { month: 'short', year: '2-digit' })
                 };
             });
 
+            // 5. Merge and Calculate
             const allKeys = Array.from(new Set([...Object.keys(groupedHistory), ...Object.keys(contributionsByMonth)])).sort();
             
             let runningInvested = 0;
             
             const finalData = allKeys.map(key => {
+                const [yearStr, monthStr] = key.split('-');
+                const currentMonthId = parseInt(yearStr) * 100 + parseInt(monthStr);
+
                 const contribution = contributionsByMonth[key] || 0;
                 runningInvested += contribution;
                 
                 const historyPoint = groupedHistory[key] || {};
                 let netWorth = historyPoint.netWorth || runningInvested;
                 
-                // STRICT FIX: Zero out everything before the first investment month
-                if (key < startMonthKey) {
-                    runningInvested = 0;
+                // CRITICAL FIX: 
+                // 1. If current month is BEFORE the first investment -> FORCE ZERO
+                // 2. If Accumulated Invested is ZERO -> FORCE ZERO GAIN
+                
+                if (currentMonthId < startMonthId || runningInvested <= 0) {
                     return {
                         dateKey: key,
                         displayDate: historyPoint.displayDate || key,
@@ -163,33 +170,21 @@ const Reports: React.FC = () => {
                     };
                 }
 
-                // STACKED BAR LOGIC (Investidor 10 Style)
-                let investedBar = runningInvested;
-                let gainBar = 0;
-                
-                // Logic: If Total Invested is 0, Gain MUST be 0.
-                if (runningInvested > 0) {
-                    if (netWorth > runningInvested) {
-                        gainBar = netWorth - runningInvested;
-                    }
-                } else {
-                    investedBar = 0;
-                    gainBar = 0;
-                    netWorth = 0;
-                }
+                // Calculate Gain: NetWorth - Invested
+                let gain = netWorth - runningInvested;
                 
                 return {
                     dateKey: key,
                     displayDate: historyPoint.displayDate || key,
-                    invested: investedBar,
-                    gain: gainBar,
+                    invested: runningInvested,
+                    gain: gain > 0 ? gain : 0, // Only show positive gain in stack
                     totalValue: netWorth
                 };
             });
 
-            // Filter out empty trailing/leading months if needed, but keep the logic strict
-            const firstRealDataIndex = finalData.findIndex(d => d.totalValue > 0 || d.invested > 0);
-            const trimmedData = firstRealDataIndex >= 0 ? finalData.slice(firstRealDataIndex) : [];
+            // Filter out months with zero data at start
+            const firstActiveIndex = finalData.findIndex(d => d.invested > 0);
+            const trimmedData = firstActiveIndex >= 0 ? finalData.slice(firstActiveIndex) : [];
 
             setMonthlyData(trimmedData);
             setIsLoading(false);
@@ -228,7 +223,7 @@ const Reports: React.FC = () => {
                 </Card>
             </div>
 
-            {/* CHART: Evolução Patrimonial (Estilo Investidor 10 - Stacked) */}
+            {/* CHART: Evolução Patrimonial (Investidor 10 Style - Stacked) */}
             <Card className="bg-brand-surface border-brand-border">
                 <CardHeader className="flex items-center gap-2 border-brand-border/30">
                     <div className="p-2 bg-brand-primary/10 rounded-lg text-brand-primary">
@@ -236,7 +231,7 @@ const Reports: React.FC = () => {
                             <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
                         </svg>
                     </div>
-                    {t('monthlyEvolution')} (Valor Aplicado + Ganho de Capital)
+                    {t('monthlyEvolution')}
                 </CardHeader>
                 <CardContent className="h-[400px]">
                     {monthlyData.length > 0 ? (
@@ -267,22 +262,22 @@ const Reports: React.FC = () => {
                                 />
                                 <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px', fontWeight: 500, color: '#C9D1D9' }} />
                                 
-                                {/* Barra: Valor Aplicado (Base Escura) */}
+                                {/* Base: Valor Aplicado */}
                                 <Bar 
                                     dataKey="invested" 
                                     name={t('appliedValue')} 
                                     stackId="a" 
-                                    fill="#059669" // Darker Green
+                                    fill="#059669" // Dark Green
                                     radius={[0, 0, 0, 0]} 
                                     barSize={20} 
                                 />
                                 
-                                {/* Barra: Ganho de Capital (Topo Claro) */}
+                                {/* Top: Ganho de Capital */}
                                 <Bar 
                                     dataKey="gain" 
                                     name={t('capitalGain')} 
                                     stackId="a" 
-                                    fill="#34D399" // Lighter Green
+                                    fill="#34D399" // Light Green
                                     radius={[4, 4, 0, 0]} 
                                     barSize={20} 
                                 />
