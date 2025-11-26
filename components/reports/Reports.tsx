@@ -24,7 +24,6 @@ const CustomPieTooltip = ({ active, payload }: any) => {
     return null;
 };
 
-// Tooltip Customizado para o Gráfico de Barras (Mostra as 3 opções: Aplicado, Ganho, Saldo)
 const CustomBarTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
         const invested = payload.find((p: any) => p.dataKey === 'invested')?.value || 0;
@@ -35,19 +34,16 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
             <div className="bg-[#161B22] border border-[#30363D] p-3 rounded-lg shadow-xl min-w-[180px]">
                 <p className="text-brand-secondary text-xs mb-2 font-bold uppercase">{label}</p>
                 
-                {/* 1. Valor Aplicado */}
                 <div className="flex justify-between items-center mb-1">
                     <span className="text-xs text-[#059669] font-medium">● Valor Aplicado:</span>
                     <span className="text-xs text-brand-text font-mono">{formatCurrency(invested, 'USD')}</span>
                 </div>
 
-                {/* 2. Ganho de Capital */}
                 <div className="flex justify-between items-center mb-2 border-b border-white/10 pb-2">
                     <span className="text-xs text-[#34D399] font-medium">● Ganho de Capital:</span>
                     <span className="text-xs text-brand-text font-mono">{gain >= 0 ? '+' : ''}{formatCurrency(gain, 'USD')}</span>
                 </div>
 
-                {/* 3. Saldo Total (A 3ª Opção pedida) */}
                 <div className="flex justify-between items-center pt-1">
                     <span className="text-sm text-white font-bold">Saldo do Mês:</span>
                     <span className="text-sm text-brand-primary font-bold font-mono">{formatCurrency(total, 'USD')}</span>
@@ -188,8 +184,7 @@ const Reports: React.FC = () => {
                 const historyPoint = groupedHistory[key] || {};
                 const rawSnapshotValue = historyPoint.snapshotValue || 0;
                 
-                // CRITICAL: FIX GHOST PROFITS
-                // If month is before first investment, ZERO EVERYTHING
+                // CRITICAL FIX: STRICT ZEROING BEFORE START DATE
                 if (currentMonthId < startMonthId) {
                     return {
                         dateKey: key,
@@ -211,7 +206,7 @@ const Reports: React.FC = () => {
                     };
                 }
 
-                // RATIO SCALING to remove Ghost Profits from future assets
+                // RATIO SCALING to remove Ghost Profits
                 let adjustedNetWorth = rawSnapshotValue;
                 if (totalCurrentInvested > 0) {
                     const ratio = runningInvested / totalCurrentInvested;
@@ -322,7 +317,7 @@ const Reports: React.FC = () => {
                                     barSize={20} 
                                 />
 
-                                {/* Line: Saldo do Mês (Total Value) - Visual Cue for 3rd Option */}
+                                {/* Line: Saldo do Mês (Total Value) */}
                                 <Line
                                     type="monotone"
                                     dataKey="totalValue"
