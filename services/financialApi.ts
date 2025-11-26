@@ -145,8 +145,9 @@ export const TOP_ASSETS_FALLBACK = [
     { t: 'SCHD', n: 'Schwab US Dividend', c: AssetClass.ETF }
 ];
 
-// --- Helper: Robust Fetcher ---
-const smartFetch = async (url: string, useProxy = true, timeoutMs = 5000, isCsv = false) => {
+// --- Helper: Robust Fetcher (SPEED UPDATE) ---
+// Reduced default timeout from 5000ms to 2500ms for faster failover
+const smartFetch = async (url: string, useProxy = true, timeoutMs = 2500, isCsv = false) => {
     const separator = url.includes('?') ? '&' : '?';
     const bust = `_t=${Date.now()}`; 
     const finalUrl = `${url}${separator}${bust}`;

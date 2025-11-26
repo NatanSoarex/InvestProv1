@@ -103,9 +103,11 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
   }, []);
 
-  const [quotes, setQuotes] = useState<Record<string, Quote>>({});
+  // PERFORMANCE FIX: Cache Quotes and FX Rate to display immediately on load
+  const [quotes, setQuotes] = useLocalStorage<Record<string, Quote>>('cached_quotes', {});
+  const [fxRate, setFxRate] = useLocalStorage<number>('cached_fx_rate', 5.25);
+  
   const [assets, setAssets] = useState<Record<string, Asset>>({});
-  const [fxRate, setFxRate] = useState(5.25); 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -214,7 +216,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       } finally {
           setIsRefreshing(false);
       }
-  }, [allTickers]);
+  }, [allTickers, setQuotes, setFxRate]);
 
   useEffect(() => {
     refresh(); 
