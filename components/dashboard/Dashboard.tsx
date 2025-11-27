@@ -19,14 +19,12 @@ const AnimatedCounter: React.FC<{ value: number; formatter: (val: number) => str
 
         startValueRef.current = displayValue;
         startTimeRef.current = null;
-        
         const duration = 1500; 
 
         const animate = (timestamp: number) => {
             if (!startTimeRef.current) startTimeRef.current = timestamp;
             const progress = Math.min((timestamp - startTimeRef.current) / duration, 1);
             const ease = 1 - Math.pow(1 - progress, 5);
-            
             const current = startValueRef.current + (value - startValueRef.current) * ease;
             setDisplayValue(current);
 
@@ -36,12 +34,8 @@ const AnimatedCounter: React.FC<{ value: number; formatter: (val: number) => str
                 setDisplayValue(value); 
             }
         };
-
         reqIdRef.current = requestAnimationFrame(animate);
-
-        return () => {
-            if (reqIdRef.current) cancelAnimationFrame(reqIdRef.current);
-        };
+        return () => { if (reqIdRef.current) cancelAnimationFrame(reqIdRef.current); };
     }, [value]);
 
     return <span className="font-mono tracking-tighter">{formatter(displayValue)}</span>;
@@ -55,41 +49,47 @@ const SummaryCard: React.FC<{ title: string; value: string; numericValue?: numbe
   const isNegative = hasChange && safeChange <= -0.01;
   const isNeutral = !isPositive && !isNegative;
 
-  return (
-    <Card className="relative overflow-hidden group">
-      {/* Background Gradient for Depth */}
-      <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-      
-      {/* Glow Effect based on Performance */}
-      {hasChange && !isNeutral && (
-        <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-[50px] opacity-20 -mr-10 -mt-10 ${isPositive ? 'bg-brand-success' : 'bg-brand-danger'}`}></div>
-      )}
+  // Vibrant Gradients for Cards
+  let bgGradient = 'from-brand-surface to-brand-bg';
+  let borderColor = 'border-white/5';
+  let iconColor = 'text-brand-secondary';
+  
+  if (hasChange) {
+      if (isPositive) {
+          bgGradient = 'from-brand-success/10 to-brand-surface';
+          borderColor = 'border-brand-success/20';
+          iconColor = 'text-brand-success';
+      } else if (isNegative) {
+          bgGradient = 'from-brand-danger/10 to-brand-surface';
+          borderColor = 'border-brand-danger/20';
+          iconColor = 'text-brand-danger';
+      }
+  }
 
-      <CardContent>
-        <p className="text-brand-secondary text-[10px] font-bold tracking-[0.2em] uppercase mb-2 flex items-center gap-2">
-            {title}
-            <span className="h-px flex-1 bg-white/10"></span>
-        </p>
-        <div className="text-3xl md:text-4xl font-bold text-white drop-shadow-md">
-            {numericValue !== undefined && formatFn ? (
-                <AnimatedCounter value={numericValue} formatter={formatFn} />
-            ) : (
-                <span className="font-mono">{value}</span>
-            )}
+  return (
+    <div className={`relative overflow-hidden rounded-2xl border ${borderColor} bg-gradient-to-br ${bgGradient} p-6 shadow-lg transition-all duration-300 hover:shadow-2xl hover:-translate-y-1`}>
+      <p className={`text-xs font-bold tracking-widest uppercase mb-2 flex items-center gap-2 ${iconColor}`}>
+          {title}
+      </p>
+      <div className="text-3xl md:text-4xl font-bold text-white drop-shadow-sm">
+          {numericValue !== undefined && formatFn ? (
+              <AnimatedCounter value={numericValue} formatter={formatFn} />
+          ) : (
+              <span className="font-mono">{value}</span>
+          )}
+      </div>
+      {hasChange && (
+        <div className="flex items-center mt-3">
+           <span className={`flex items-center text-sm font-bold px-2 py-0.5 rounded-md ${
+               isNeutral ? 'text-brand-secondary bg-white/5' :
+               isPositive ? 'text-brand-success bg-brand-success/10' : 'text-brand-danger bg-brand-danger/10'
+           }`}>
+              {!isNeutral && (isPositive ? '▲' : '▼')} <span className="font-mono ml-1">{displayChange}</span> 
+              <span className="opacity-80 ml-1 font-mono text-xs">({Math.abs(safeChangePercent).toFixed(2)}%)</span>
+           </span>
         </div>
-        {hasChange && (
-          <div className="flex items-center mt-3">
-             <span className={`flex items-center text-sm font-bold px-2.5 py-1 rounded-md border backdrop-blur-sm shadow-lg transition-all ${
-                 isNeutral ? 'text-brand-secondary border-brand-secondary/20 bg-brand-secondary/5' :
-                 isPositive ? 'text-brand-success border-brand-success/30 bg-brand-success/10 shadow-[0_0_10px_rgba(0,255,163,0.1)]' : 'text-brand-danger border-brand-danger/30 bg-brand-danger/10 shadow-[0_0_10px_rgba(255,46,91,0.1)]'
-             }`}>
-                {!isNeutral && (isPositive ? '▲' : '▼')} <span className="font-mono ml-1">{displayChange}</span> 
-                <span className="opacity-70 ml-1 font-mono text-xs">({Math.abs(safeChangePercent).toFixed(2)}%)</span>
-             </span>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      )}
+    </div>
   );
 };
 
@@ -97,7 +97,7 @@ const RecentActivity: React.FC<{ transactions: Transaction[]; formatFn: (val: nu
     const recent = [...transactions].sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime()).slice(0, 5);
 
     return (
-        <div className="space-y-2">
+        <div className="space-y-3">
             {recent.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-40 text-brand-secondary opacity-50">
                     <div className="text-4xl mb-2">💤</div>
@@ -108,13 +108,13 @@ const RecentActivity: React.FC<{ transactions: Transaction[]; formatFn: (val: nu
                     const isBRL = t.ticker.endsWith('.SA');
                     const currency = isBRL ? 'BRL' : 'USD';
                     return (
-                    <div key={t.id} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5 hover:border-brand-primary/30 hover:bg-white/10 transition-all group">
-                        <div className="flex items-center gap-4">
-                            <div className={`h-10 w-10 rounded-lg flex items-center justify-center text-sm font-bold shadow-lg ${t.quantity > 0 ? 'bg-brand-success/20 text-brand-success border border-brand-success/30' : 'bg-brand-danger/20 text-brand-danger border border-brand-danger/30'}`}>
+                    <div key={t.id} className="flex items-center justify-between p-3 rounded-xl bg-brand-surface/50 border border-white/5 hover:border-brand-primary/30 transition-all">
+                        <div className="flex items-center gap-3">
+                            <div className={`h-10 w-10 rounded-lg flex items-center justify-center text-sm font-bold ${t.quantity > 0 ? 'bg-brand-success/10 text-brand-success' : 'bg-brand-danger/10 text-brand-danger'}`}>
                                 {t.ticker.substring(0, 2)}
                             </div>
                             <div>
-                                <p className="font-bold text-white text-sm group-hover:text-brand-primary transition-colors">{t.ticker}</p>
+                                <p className="font-bold text-white text-sm">{t.ticker}</p>
                                 <p className="text-[10px] text-brand-secondary font-mono">{formatCurrency(t.price, currency)}</p>
                             </div>
                         </div>
@@ -160,7 +160,6 @@ const Dashboard: React.FC = () => {
         setPortfolioHistory([]);
         return;
       };
-      
       try {
         const historyData = await financialApi.getPortfolioPriceHistory(transactions, fxRate, selectedRange, currentQuotesMap);
         setPortfolioHistory(historyData);
@@ -170,7 +169,6 @@ const Dashboard: React.FC = () => {
         setIsHistoryLoading(false);
       }
     }
-
     fetchHistory();
   }, [transactions, fxRate, selectedRange, lastUpdated, currentQuotesMap]);
 
@@ -195,32 +193,21 @@ const Dashboard: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
+    <div className="space-y-8 animate-in fade-in duration-500 pb-24">
       <div className="flex justify-between items-center">
-        <div className="flex flex-col">
-            <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-brand-secondary tracking-tighter uppercase">{t('overview')}</h1>
-            <p className="text-brand-primary text-xs font-mono tracking-widest mt-1 uppercase flex items-center gap-2">
-                <span className="w-2 h-2 bg-brand-primary rounded-full animate-pulse"></span>
-                System Operational
-            </p>
+        <div>
+            <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">{t('overview')}</h1>
+            <p className="text-brand-secondary text-sm">Bem-vindo de volta, {currentUser?.name}</p>
         </div>
         
-        <div className="flex items-center gap-4">
-            {currentUser?.isAdmin && (
-                <button 
-                    onClick={() => setIsAdminOpen(true)}
-                    className="relative group cursor-pointer"
-                    title="Painel Administrativo"
-                >
-                    <div className="absolute -inset-1 bg-gradient-to-r from-brand-accent to-brand-danger rounded blur opacity-40 group-hover:opacity-100 transition duration-200 animate-pulse"></div>
-                    <div className="relative px-4 py-1.5 bg-brand-bg/90 backdrop-blur border border-white/10 rounded flex items-center justify-center">
-                        <span className="text-sm font-black tracking-[0.3em] bg-clip-text text-transparent bg-gradient-to-r from-brand-accent to-brand-danger">
-                            ADMIN
-                        </span>
-                    </div>
-                </button>
-            )}
-        </div>
+        {currentUser?.isAdmin && (
+            <button 
+                onClick={() => setIsAdminOpen(true)}
+                className="px-4 py-1.5 bg-brand-accent/10 border border-brand-accent/50 text-brand-accent rounded-lg text-sm font-bold tracking-wider hover:bg-brand-accent/20 transition-all shadow-[0_0_15px_rgba(139,92,246,0.3)] animate-pulse"
+            >
+                ADMIN
+            </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -242,20 +229,17 @@ const Dashboard: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2 min-h-[400px] flex flex-col relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-brand-primary to-transparent"></div>
-            <CardHeader className="flex flex-col sm:flex-row justify-between items-center pb-4 gap-4 z-10 relative">
-                <span className="text-sm font-bold uppercase tracking-wider text-brand-secondary">{t('wealthEvolution')}</span>
-                <div className="flex bg-black/40 rounded-lg p-1 space-x-1 border border-white/5 backdrop-blur-md">
+        <Card className="lg:col-span-2 min-h-[450px] flex flex-col">
+            <CardHeader className="flex flex-col sm:flex-row justify-between items-center pb-4 gap-4">
+                <span className="text-brand-text">{t('wealthEvolution')}</span>
+                <div className="flex bg-brand-bg rounded-lg p-1 space-x-1 border border-white/5">
                     {ranges.map(range => (
                         <button
                             key={range}
-                            onClick={() => {
-                                setSelectedRange(range);
-                            }}
-                            className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all duration-300 font-mono ${
+                            onClick={() => setSelectedRange(range)}
+                            className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all font-mono ${
                                 selectedRange === range 
-                                ? 'bg-brand-primary/20 text-brand-primary shadow-[0_0_10px_rgba(0,229,255,0.3)] border border-brand-primary/30' 
+                                ? 'bg-brand-primary text-white shadow-lg' 
                                 : 'text-brand-secondary hover:text-white hover:bg-white/5'
                             }`}
                         >
@@ -264,112 +248,84 @@ const Dashboard: React.FC = () => {
                     ))}
                 </div>
             </CardHeader>
-            <CardContent className="h-full w-full p-0 pt-4 flex-1 relative z-10">
+            <CardContent className="h-full w-full flex-1">
                 {displayHistory.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={displayHistory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <AreaChart data={displayHistory} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                         <defs>
                             <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#00E5FF" stopOpacity={0.4}/>
-                                <stop offset="100%" stopColor="#00E5FF" stopOpacity={0}/>
+                                <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/>
+                                <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
                             </linearGradient>
                         </defs>
                         
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.2} vertical={false} />
                         
                         <XAxis 
                             dataKey="date" 
-                            stroke="#475569" 
-                            fontSize={10}
+                            stroke="#64748B" 
+                            fontSize={11}
                             tickLine={false} 
                             axisLine={false} 
                             tickFormatter={formatXAxis}
-                            minTickGap={70} 
+                            minTickGap={50} 
                             dy={10}
-                            fontFamily="JetBrains Mono"
                         />
                         
                         <YAxis 
-                            stroke="#475569" 
-                            fontSize={10}
+                            stroke="#64748B" 
+                            fontSize={11}
                             tickLine={false} 
                             axisLine={false} 
                             tickFormatter={(value) => {
                                 try {
-                                    return new Intl.NumberFormat(settings.language, { style: 'currency', currency: settings.currency, notation: 'compact' }).format(value);
+                                    return new Intl.NumberFormat(settings.language, { style: 'currency', currency: settings.currency, notation: 'compact', compactDisplay: 'short' }).format(value);
                                 } catch { return '' }
                             }} 
-                            width={55}
+                            width={60}
                             domain={['auto', 'auto']} 
-                            fontFamily="JetBrains Mono"
                         />
                         
                         <Tooltip 
                             contentStyle={{ 
-                                backgroundColor: 'rgba(11, 14, 20, 0.8)', 
-                                border: '1px solid rgba(0, 229, 255, 0.2)',
+                                backgroundColor: '#1E293B', 
+                                border: '1px solid rgba(255,255,255,0.1)',
                                 borderRadius: '8px',
                                 padding: '12px',
-                                backdropFilter: 'blur(12px)',
-                                boxShadow: '0 0 20px rgba(0, 229, 255, 0.15)'
+                                boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
                             }}
-                            itemStyle={{ fontSize: '13px', fontWeight: 600, fontFamily: 'JetBrains Mono' }}
-                            labelStyle={{ color: '#94A3B8', fontSize: '10px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}
-                            labelFormatter={(label) => {
-                                try {
-                                    const d = new Date(label as string);
-                                    return d.toLocaleString(settings.language, { 
-                                        weekday: 'short', 
-                                        day: '2-digit', 
-                                        month: 'short', 
-                                        hour: '2-digit', 
-                                        minute: '2-digit'
-                                    });
-                                } catch { return ''; }
-                            }}
-                            formatter={(value, name) => {
-                                try {
-                                    const formatted = new Intl.NumberFormat(settings.language, { style: 'currency', currency: settings.currency }).format(value as number);
-                                    return [
-                                        <span style={{ color: '#00E5FF', textShadow: '0 0 8px rgba(0,229,255,0.6)' }}>{formatted}</span>, 
-                                        <span style={{ color: '#E2E8F0' }}>{t('netWorth')}</span>
-                                    ];
-                                } catch { return [value, name]; }
-                            }}
-                            cursor={{ stroke: '#00E5FF', strokeWidth: 1, strokeDasharray: '4 4' }}
+                            itemStyle={{ fontSize: '13px', fontWeight: 600, fontFamily: 'JetBrains Mono', color: '#fff' }}
+                            labelStyle={{ color: '#94A3B8', fontSize: '11px', marginBottom: '5px' }}
+                            formatter={(value) => [
+                                formatCurrency(value as number, settings.currency), 
+                                t('netWorth')
+                            ]}
                         />
                         
                         <ReferenceLine 
                             y={displayTotalInvested} 
                             stroke="#94A3B8" 
                             strokeDasharray="3 3" 
-                            strokeOpacity={0.3}
-                            label={{ 
-                                value: 'Break-Even', 
-                                fill: '#94A3B8', 
-                                fontSize: 10, 
-                                position: 'insideBottomRight',
-                                fontFamily: 'JetBrains Mono'
-                            }} 
+                            strokeOpacity={0.5}
+                            label={{ value: 'Investido', fill: '#94A3B8', fontSize: 10, position: 'insideBottomRight' }} 
                         />
 
                         <Area 
                             type="monotone" 
                             dataKey="price" 
-                            stroke="#00E5FF" 
-                            strokeWidth={2} 
+                            stroke="#3B82F6" 
+                            strokeWidth={3} 
                             fillOpacity={1} 
                             fill="url(#colorValue)"
-                            animationDuration={1500} 
-                            filter="drop-shadow(0 0 4px rgba(0, 229, 255, 0.5))"
+                            animationDuration={1500}
                             isAnimationActive={true}
                         />
                         </AreaChart>
                     </ResponsiveContainer>
                 ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-brand-secondary text-sm">
+                    <div className="flex flex-col items-center justify-center h-full text-brand-secondary text-sm opacity-60">
                         {isHistoryLoading ? (
-                             <div className="w-10 h-10 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin"></div>
+                             <div className="w-8 h-8 border-2 border-brand-primary border-t-transparent rounded-full animate-spin"></div>
                         ) : (
                             <p>{t('addAssetsChart')}</p>
                         )}
@@ -378,9 +334,8 @@ const Dashboard: React.FC = () => {
             </CardContent>
         </Card>
 
-        <Card className="lg:col-span-1 border-white/5 relative">
-            <div className="absolute top-0 right-0 w-full h-1 bg-gradient-to-l from-brand-accent to-transparent"></div>
-            <CardHeader className="border-white/5 pb-4">{t('recentActivity')}</CardHeader>
+        <Card className="lg:col-span-1">
+            <CardHeader>{t('recentActivity')}</CardHeader>
             <CardContent>
                 <RecentActivity transactions={transactions} formatFn={formatDisplayValue} noActivityText={t('noActivity')} />
             </CardContent>

@@ -7,9 +7,10 @@ interface CardProps {
 }
 
 export const Card: React.FC<CardProps> = ({ children, className = '', onClick }) => {
-  // Glassmorphism Base Styles
-  const baseClasses = 'bg-brand-surface/40 backdrop-blur-xl border border-white/10 rounded-2xl p-5 md:p-7 shadow-2xl transition-all duration-300';
-  const clickableClasses = onClick ? 'cursor-pointer hover:border-brand-primary/50 hover:shadow-neon hover:-translate-y-1' : '';
+  // Cleaner Glassmorphism
+  // Less blur, clearer background for better readability
+  const baseClasses = 'bg-brand-surface/70 backdrop-blur-md border border-white/5 rounded-2xl p-5 md:p-6 shadow-xl transition-all duration-300';
+  const clickableClasses = onClick ? 'cursor-pointer hover:border-brand-primary/30 hover:-translate-y-1' : '';
   
   return (
     <div className={`${baseClasses} ${className} ${clickableClasses}`} onClick={onClick}>
@@ -19,7 +20,7 @@ export const Card: React.FC<CardProps> = ({ children, className = '', onClick })
 };
 
 export const CardHeader: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className='' }) => (
-    <div className={`text-lg font-bold text-brand-text mb-4 pb-3 border-b border-white/5 tracking-tight ${className}`}>
+    <div className={`text-lg font-bold text-brand-text mb-4 pb-3 border-b border-white/5 tracking-tight flex items-center gap-2 ${className}`}>
         {children}
     </div>
 );
