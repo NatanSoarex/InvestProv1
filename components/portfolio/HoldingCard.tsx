@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Holding, MarketState } from '../../types';
 import { Card, CardContent } from '../ui/Card';
@@ -17,13 +16,13 @@ const TrashIcon = () => (
 );
 
 const MoonIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-indigo-400" fill="currentColor" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-brand-accent" fill="currentColor" viewBox="0 0 24 24">
         <path d="M12 22c5.523 0 10-4.477 10-10 0-.64-.066-1.266-.19-1.872a1.475 1.475 0 00-2.23-1.086 8.997 8.997 0 01-1.767.568 8.84 8.84 0 01-1.813.2c-5.523 0-10-4.477-10-10 0-.615.06-1.22.172-1.807a1.475 1.475 0 00-2.128-1.65A9.954 9.954 0 002 12c0 5.523 4.477 10 10 10z" />
     </svg>
 );
 
 const SunIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
     </svg>
 );
@@ -32,12 +31,10 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
   const { removeHolding, settings, fxRate, t } = usePortfolio();
   const { asset, quote, totalQuantity, averagePrice, currentValue, totalGainLoss, totalGainLossPercent, dayChange, dayChangePercent } = holding;
   
-  // Currency Logic
   const isBRL = settings.currency === 'BRL';
   const currencySymbol = isBRL ? 'BRL' : 'USD';
   const conversionRate = isBRL ? fxRate : 1;
 
-  // Safe Value Conversions
   const displayCurrentValue = (holding.currentValueUSD || 0) * conversionRate;
   const displayTotalGainLoss = (holding.totalGainLossUSD || 0) * conversionRate;
   const displayDayChange = (holding.dayChangeUSD || 0) * conversionRate;
@@ -45,14 +42,12 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
       ? ((holding.totalInvestedUSD || 0) / holding.totalQuantity) * conversionRate 
       : 0;
 
-  // Neutral Logic
   const isDayChangePositive = (displayDayChange ?? 0) > 0.001;
   const isDayChangeNegative = (displayDayChange ?? 0) < -0.001;
   
   const isTotalReturnPositive = (displayTotalGainLoss ?? 0) > 0.001;
   const isTotalReturnNegative = (displayTotalGainLoss ?? 0) < -0.001;
   
-  // New Logic: Calculate per-share gain/loss
   const currentQuotePrice = quote ? Number(quote.price) : 0;
   const displayCurrentPricePerShare = (holding.totalQuantity > 0) ? displayCurrentValue / holding.totalQuantity : 0;
   const gainPerShare = displayCurrentPricePerShare - displayAveragePrice;
@@ -66,26 +61,24 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
       removeHolding(asset.ticker);
   };
 
-  // Safeguard calculations
   const safeDayChangePercent = isNaN(dayChangePercent) || dayChangePercent === null ? 0 : dayChangePercent;
   const safeTotalGainLossPercent = isNaN(totalGainLossPercent) || totalGainLossPercent === null ? 0 : totalGainLossPercent;
 
   return (
-    <Card>
+    <Card className="border-l-4 border-l-brand-primary">
       <CardContent className="text-sm">
-        {/* Header: Asset Info & Market Value */}
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
             <img 
                 src={asset.logo || `https://ui-avatars.com/api/?name=${asset.ticker}&background=30363D&color=C9D1D9`} 
                 alt={asset.name} 
-                className="h-10 w-10 rounded-full object-cover bg-brand-surface" 
+                className="h-10 w-10 rounded-xl object-cover bg-black border border-white/10 shadow-lg" 
                 onError={(e) => e.currentTarget.src = `https://ui-avatars.com/api/?name=${asset.ticker}&background=30363D&color=C9D1D9`}
             />
             <div>
               <div className="flex items-center gap-2">
-                  <p className="font-semibold text-brand-text text-base">{asset.ticker}</p>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand-surface border border-brand-border text-brand-secondary font-mono">
+                  <p className="font-bold text-white text-base tracking-wide">{asset.ticker}</p>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-brand-secondary font-mono">
                     {totalQuantity.toLocaleString(undefined, { maximumFractionDigits: 8 })} un
                   </span>
               </div>
@@ -93,58 +86,54 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
             </div>
           </div>
           <div className="text-right flex-shrink-0">
-            <p className="text-xs text-brand-secondary mb-0.5">{t('totalValue')}</p>
-            <p className="font-bold text-lg text-brand-text">{formatCurrency(displayCurrentValue, currencySymbol)}</p>
+            <p className="text-[10px] text-brand-secondary uppercase mb-0.5 tracking-wider">{t('totalValue')}</p>
+            <p className="font-bold text-lg text-white font-mono">{formatCurrency(displayCurrentValue, currencySymbol)}</p>
           </div>
         </div>
         
-        <hr className="my-3 border-brand-border" />
+        <hr className="my-3 border-white/10" />
         
-        {/* Performance Section */}
         <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-            {/* Wallet Impact (Total Return) */}
             <div>
-                <p className="text-brand-secondary text-xs uppercase font-bold tracking-wider mb-1">{t('totalReturn')} (Carteira)</p>
-                <div className={`font-medium text-base ${isTotalReturnPositive ? 'text-brand-success' : isTotalReturnNegative ? 'text-brand-danger' : 'text-brand-text'}`}>
+                <p className="text-brand-secondary text-[10px] uppercase font-bold tracking-wider mb-1">{t('totalReturn')}</p>
+                <div className={`font-bold text-base font-mono ${isTotalReturnPositive ? 'text-brand-success' : isTotalReturnNegative ? 'text-brand-danger' : 'text-white'}`}>
                     <span>{formatCurrency(displayTotalGainLoss, currencySymbol)}</span>
-                    <span className="ml-1 text-xs opacity-80">({formatPercent(safeTotalGainLossPercent)})</span>
+                    <span className="ml-1 text-[10px] opacity-80">({formatPercent(safeTotalGainLossPercent)})</span>
                 </div>
             </div>
 
-            {/* Market Impact (Price Change) */}
             <div>
-                <p className="text-brand-secondary text-xs uppercase font-bold tracking-wider mb-1">{t('dayChange')}</p>
-                <div className={`font-medium text-base ${isDayChangePositive ? 'text-brand-success' : isDayChangeNegative ? 'text-brand-danger' : 'text-brand-text'}`}>
+                <p className="text-brand-secondary text-[10px] uppercase font-bold tracking-wider mb-1">{t('dayChange')}</p>
+                <div className={`font-bold text-base font-mono ${isDayChangePositive ? 'text-brand-success' : isDayChangeNegative ? 'text-brand-danger' : 'text-white'}`}>
                     {quote ? (
                         <>
                             <span>{isDayChangePositive ? '+' : ''}{formatCurrency(displayDayChange, currencySymbol)}</span>
-                            <span className="ml-1 text-xs opacity-80">({safeDayChangePercent.toFixed(2)}%)</span>
+                            <span className="ml-1 text-[10px] opacity-80">({safeDayChangePercent.toFixed(2)}%)</span>
                         </>
                     ) : (
-                        <span className="text-xs text-brand-secondary">...</span>
+                        <span className="text-xs text-brand-secondary animate-pulse">...</span>
                     )}
                 </div>
             </div>
         </div>
 
-        {/* Price Analysis (The Math Breakdown) */}
-        <div className="mt-4 bg-brand-bg/30 rounded-lg p-3 border border-brand-border/50">
+        <div className="mt-4 bg-black/20 rounded-lg p-3 border border-white/5">
             <div className="flex justify-between items-center mb-2">
-                 <span className="text-xs text-brand-secondary font-medium">Seu Preço Médio</span>
-                 <span className="text-xs text-brand-text font-mono">{formatUnitPrice(displayAveragePrice, currencySymbol)}</span>
+                 <span className="text-xs text-brand-secondary font-bold uppercase">Preço Médio</span>
+                 <span className="text-xs text-white font-mono">{formatUnitPrice(displayAveragePrice, currencySymbol)}</span>
             </div>
             <div className="flex justify-between items-center mb-2">
                  <div className="flex items-center gap-1">
-                    <span className="text-xs text-brand-secondary font-medium">{t('currentPrice')}</span>
+                    <span className="text-xs text-brand-secondary font-bold uppercase">{t('currentPrice')}</span>
                     {quote && quote.marketState === MarketState.PRE && <SunIcon />}
                     {quote && quote.marketState === MarketState.POST && <MoonIcon />}
                  </div>
-                 <span className="text-xs text-brand-text font-bold font-mono">{quote ? formatUnitPrice(displayCurrentPricePerShare, currencySymbol) : '...'}</span>
+                 <span className="text-xs text-white font-bold font-mono">{quote ? formatUnitPrice(displayCurrentPricePerShare, currencySymbol) : '...'}</span>
             </div>
             
-            <div className="border-t border-brand-border/30 pt-2 mt-1 flex justify-between items-center">
-                <span className="text-xs text-brand-secondary font-medium">Diferença por Cota</span>
-                <span className={`text-xs font-bold font-mono ${isGainPerSharePositive ? 'text-brand-success' : isGainPerShareNegative ? 'text-brand-danger' : 'text-brand-text'}`}>
+            <div className="border-t border-white/5 pt-2 mt-1 flex justify-between items-center">
+                <span className="text-xs text-brand-secondary font-bold uppercase">Resultado/Cota</span>
+                <span className={`text-xs font-bold font-mono ${isGainPerSharePositive ? 'text-brand-success' : isGainPerShareNegative ? 'text-brand-danger' : 'text-white'}`}>
                     {gainPerShare > 0 ? '+' : ''}{formatCurrency(gainPerShare, currencySymbol)}
                 </span>
             </div>
@@ -153,13 +142,13 @@ export const HoldingCard: React.FC<HoldingCardProps> = ({ holding, onShowHistory
         <div className="mt-4 flex gap-3">
              <button 
                 onClick={() => onShowHistory(holding)} 
-                className="flex-1 text-center py-2 text-sm font-semibold bg-brand-surface hover:bg-brand-border/50 border border-brand-border rounded-lg text-brand-primary transition-colors"
+                className="flex-1 text-center py-2.5 text-xs font-bold uppercase tracking-wider bg-white/5 hover:bg-brand-primary/20 border border-white/10 hover:border-brand-primary/50 rounded-lg text-brand-primary transition-all shadow-lg"
             >
                 {t('viewTransactions')}
             </button>
             <button 
                 onClick={handleRemove}
-                className="px-3 py-2 text-sm font-semibold bg-brand-surface hover:bg-brand-danger/10 border border-brand-border hover:border-brand-danger/50 rounded-lg text-brand-secondary hover:text-brand-danger transition-all z-10 relative"
+                className="px-4 py-2 text-sm bg-white/5 hover:bg-brand-danger/20 border border-white/10 hover:border-brand-danger/50 rounded-lg text-brand-secondary hover:text-brand-danger transition-all z-10 relative"
                 title={t('deleteAssetTooltip')}
             >
                 <TrashIcon />

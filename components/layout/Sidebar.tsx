@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { View } from '../../App';
 import { usePortfolio } from '../../contexts/PortfolioContext';
@@ -27,17 +26,17 @@ const NavItem: React.FC<{
   return (
     <button
       onClick={onClick}
-      className={`group flex items-center w-full px-4 py-3 text-sm font-medium rounded-r-xl transition-all duration-300 mb-1 relative overflow-hidden ${
+      className={`group flex items-center w-full px-4 py-3.5 text-sm font-medium rounded-r-full transition-all duration-500 mb-2 relative overflow-hidden ${
         isActive
-          ? 'text-brand-text bg-gradient-to-r from-brand-primary/10 to-transparent'
-          : 'text-brand-secondary hover:text-brand-text hover:bg-white/5'
+          ? 'text-white bg-gradient-to-r from-brand-primary/20 to-transparent'
+          : 'text-brand-secondary hover:text-white hover:bg-white/5'
       }`}
     >
-      {/* Active Indicator (Neon Bar) */}
-      <span className={`absolute left-0 top-0 bottom-0 w-1 bg-brand-primary shadow-[0_0_10px_rgba(88,166,255,0.7)] transition-all duration-300 ${isActive ? 'opacity-100' : 'opacity-0'}`}></span>
+      {/* Active Indicator (Neon Glow) */}
+      <span className={`absolute left-0 top-0 bottom-0 w-1 bg-brand-primary shadow-[0_0_15px_rgba(0,229,255,0.8)] transition-all duration-300 rounded-r-full ${isActive ? 'opacity-100 h-full' : 'opacity-0 h-0'}`}></span>
 
-      <span className={`w-6 h-6 mr-3 transition-colors duration-300 ${isActive ? 'text-brand-primary drop-shadow-[0_0_5px_rgba(88,166,255,0.5)]' : 'group-hover:text-brand-text'}`}>{icon}</span>
-      <span className="hidden md:inline relative z-10">{label}</span>
+      <span className={`w-6 h-6 mr-3 transition-transform duration-300 ${isActive ? 'text-brand-primary scale-110 drop-shadow-[0_0_8px_rgba(0,229,255,0.6)]' : 'group-hover:text-brand-text group-hover:scale-105'}`}>{icon}</span>
+      <span className={`hidden md:inline relative z-10 tracking-wide ${isActive ? 'font-bold' : ''}`}>{label}</span>
     </button>
   );
 };
@@ -46,15 +45,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, o
   const { t } = usePortfolio();
 
   return (
-    <nav className="hidden md:flex flex-col w-64 h-screen bg-brand-bg border-r border-brand-border sticky top-0 py-6 pr-4">
-      <div className="flex items-center mb-8 px-6">
-        <div className="relative">
-             <div className="absolute -inset-1 bg-brand-primary rounded-full blur opacity-20"></div>
-             <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-brand-primary relative z-10" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+    <nav className="hidden md:flex flex-col w-72 h-screen bg-transparent border-r border-white/5 sticky top-0 py-8 pr-6 backdrop-blur-sm">
+      <div className="flex items-center mb-10 px-6">
+        <div className="relative group cursor-default">
+             <div className="absolute -inset-2 bg-brand-primary rounded-full blur opacity-20 group-hover:opacity-40 transition duration-500"></div>
+             <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-brand-primary relative z-10 drop-shadow-neon" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
             </svg>
         </div>
-        <h1 className="hidden md:inline text-xl font-bold ml-3 text-brand-text tracking-tight">ProVest</h1>
+        <div className="ml-4">
+            <h1 className="hidden md:inline text-2xl font-black text-white tracking-tight">ProVest</h1>
+            <p className="text-[10px] text-brand-primary font-mono tracking-widest uppercase opacity-70">Intelligent Wealth</p>
+        </div>
       </div>
 
       <div className="space-y-1">
@@ -102,8 +104,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, o
         />
       </div>
 
-      <div className="mt-auto pt-4 border-t border-brand-border/30 mx-4 space-y-1">
-         {/* Botão de Suporte na Sidebar também para consistência */}
+      <div className="mt-auto pt-6 border-t border-white/10 mx-4 space-y-1">
         <NavItem
           icon={<ChatIcon />}
           label="Suporte"
@@ -119,22 +120,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, o
         />
       </div>
 
-      {/* Database Status Footer */}
-      <div className="mt-6 px-6 text-[10px] text-center font-mono flex flex-col gap-1">
-         <p className="text-brand-secondary opacity-40">v4.5.0 (Cloud Ready)</p>
-         <div className="flex items-center justify-center gap-2 bg-brand-surface/50 py-1 rounded-full border border-brand-border/30">
-             <span className={`h-2 w-2 rounded-full ${isSupabaseConfigured ? 'bg-brand-success animate-pulse' : 'bg-brand-secondary'}`}></span>
-             <span className={`${isSupabaseConfigured ? 'text-brand-success' : 'text-brand-secondary'} font-bold`}>
-                 {isSupabaseConfigured ? 'Cloud Conectado' : 'Modo Local'}
+      <div className="mt-8 px-6 text-[10px] text-center font-mono flex flex-col gap-2">
+         <div className={`flex items-center justify-center gap-2 py-1.5 rounded-full border border-white/5 transition-all ${isSupabaseConfigured ? 'bg-brand-success/10 border-brand-success/20' : 'bg-brand-surface'}`}>
+             <span className={`h-2 w-2 rounded-full ${isSupabaseConfigured ? 'bg-brand-success shadow-[0_0_5px_#00FFA3] animate-pulse' : 'bg-brand-secondary'}`}></span>
+             <span className={`${isSupabaseConfigured ? 'text-brand-success' : 'text-brand-secondary'} font-bold tracking-wider`}>
+                 {isSupabaseConfigured ? 'CLOUD SYNC' : 'LOCAL MODE'}
              </span>
          </div>
+         <p className="text-brand-secondary opacity-30">v5.0.0 // FUTURISTIC</p>
       </div>
     </nav>
   );
 };
 
-
-// SVG Icons (All Exported now for reuse)
+// Export Icons
 export const ChartPieIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6a7.5 7.5 0 107.5 7.5h-7.5V6z" />

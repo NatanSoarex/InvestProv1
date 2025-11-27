@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { View } from '../../App';
 import { ChartPieIcon, BriefcaseIcon, SearchIcon, StarIcon, UserIcon, DocumentReportIcon, TrendingUpIcon } from './Sidebar';
@@ -28,13 +27,13 @@ const DockItem: React.FC<{
       onClick={onClick}
       className={`relative group flex items-center justify-center transition-all duration-300 ${
         isSpecial 
-        ? 'w-12 h-12 -mt-6 bg-brand-primary text-white rounded-full shadow-lg shadow-brand-primary/40 border-4 border-brand-bg hover:scale-110 hover:shadow-brand-primary/60' 
-        : 'w-10 h-10 rounded-xl hover:bg-white/5'
-      } ${isActive && !isSpecial ? 'text-brand-primary scale-110' : 'text-brand-secondary'}`}
+        ? 'w-14 h-14 -mt-8 bg-brand-primary text-black rounded-full shadow-[0_0_20px_rgba(0,229,255,0.6)] border-4 border-brand-bg hover:scale-110' 
+        : 'w-10 h-10 rounded-xl hover:bg-white/10'
+      } ${isActive && !isSpecial ? 'text-brand-primary scale-110 drop-shadow-neon' : 'text-brand-secondary'}`}
     >
       {/* Active Indicator Dot for non-special items */}
       {isActive && !isSpecial && (
-         <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-brand-primary rounded-full shadow-[0_0_8px_rgba(88,166,255,0.8)]"></span>
+         <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-1 h-1 bg-brand-primary rounded-full shadow-[0_0_5px_rgba(0,229,255,1)]"></span>
       )}
       
       <span className={`${isSpecial ? 'w-6 h-6' : 'w-6 h-6'}`}>
@@ -58,9 +57,9 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({ currentView, setCurr
       {/* Menu Overlay (Glass Card) */}
       {isMenuOpen && (
         <>
-            <div className="fixed inset-0 z-40" onClick={() => setIsMenuOpen(false)}></div>
+            <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm" onClick={() => setIsMenuOpen(false)}></div>
             <div className="fixed bottom-24 right-4 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300 origin-bottom-right">
-                <div className="bg-[#161B22]/90 backdrop-blur-xl border border-white/10 p-2 rounded-2xl shadow-2xl min-w-[180px] flex flex-col gap-1">
+                <div className="bg-[#0B0E14]/90 backdrop-blur-xl border border-white/10 p-2 rounded-2xl shadow-2xl min-w-[200px] flex flex-col gap-1 ring-1 ring-white/5">
                     <button onClick={() => handleNav('reports')} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${currentView === 'reports' ? 'bg-brand-primary/20 text-brand-primary' : 'text-brand-text hover:bg-white/5'}`}>
                         <span className="w-5 h-5"><DocumentReportIcon /></span>
                         <span className="font-medium text-sm">{t('reports')}</span>
@@ -86,7 +85,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({ currentView, setCurr
 
       {/* Floating Glass Dock */}
       <div className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-sm">
-        <div className="bg-[#0D1117]/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl px-6 h-16 flex items-center justify-between relative">
+        <div className="bg-[#0B0E14]/70 backdrop-blur-xl border border-white/10 rounded-3xl shadow-[0_10px_30px_rgba(0,0,0,0.5)] px-6 h-16 flex items-center justify-between relative ring-1 ring-white/5">
             
             <DockItem 
                 icon={<ChartPieIcon />} 
