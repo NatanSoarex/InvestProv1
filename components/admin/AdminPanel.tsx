@@ -41,7 +41,7 @@ create table if not exists public.profiles (
   created_at timestamptz default now()
 );
 
--- 1.1 TRAVA DE SEGURANÇA ANTI-DUPLICIDADE (IMPORTANTE)
+-- 1.1 TRAVA DE SEGURANÇA ANTI-DUPLICIDADE
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'unique_username') THEN
@@ -75,7 +75,7 @@ create table if not exists public.suggestions (
   created_at timestamptz default now()
 );
 
--- 2. Limpar Políticas Antigas (Reset Total)
+-- 2. Limpar Políticas Antigas
 drop policy if exists "Perfis publicos" on public.profiles;
 drop policy if exists "Usuario atualiza proprio perfil" on public.profiles;
 drop policy if exists "Admin ve todos perfis" on public.profiles;
@@ -98,12 +98,15 @@ alter table public.transactions enable row level security;
 alter table public.watchlist enable row level security;
 alter table public.suggestions enable row level security;
 
--- 4. Criar Novas Políticas (Fix Visibility & Updates)
+-- 4. Criar Novas Políticas (CORREÇÃO DE ADMIN)
 create policy "Perfis publicos" on public.profiles for select using (true);
 create policy "Usuario atualiza proprio perfil" on public.profiles for update using (auth.uid() = id);
 create policy "Admin ve todos perfis" on public.profiles for select using (true);
--- MEGA FIX: Permite Admin atualizar assinatura e banimento
-create policy "Admin atualiza todos perfis" on public.profiles for update using ((select is_admin from public.profiles where id = auth.uid()) = true);
+
+-- REGRA CRÍTICA: Permite Admin alterar assinatura de outros
+create policy "Admin atualiza todos perfis" on public.profiles for update using (
+  (select is_admin from public.profiles where id = auth.uid()) = true
+);
 
 create policy "Usuario ve suas transacoes" on public.transactions for select using (auth.uid() = user_id);
 create policy "Usuario cria suas transacoes" on public.transactions for insert with check (auth.uid() = user_id);
@@ -116,7 +119,7 @@ create policy "Usuario deleta da watchlist" on public.watchlist for delete using
 create policy "Admin ve sugestoes" on public.suggestions for select using (true);
 create policy "Usuario envia sugestao" on public.suggestions for insert with check (auth.uid() = user_id);
 
--- 5. Gatilho Automático (Trigger)
+-- 5. Gatilho Automático
 create or replace function public.handle_new_user() 
 returns trigger as $$
 begin

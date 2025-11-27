@@ -3,13 +3,52 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { Card, CardHeader, CardContent } from '../ui/Card';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from 'recharts';
 import { financialApi } from '../../services/financialApi';
 import { formatCurrency } from '../../utils/formatters';
 import { HistoricalDataPoint, Transaction, Quote } from '../../types';
 import { AdminPanel } from '../admin/AdminPanel';
 
-const SummaryCard: React.FC<{ title: string; value: string; change?: number; changePercent?: number; displayChange?: string }> = ({ title, value, change, changePercent, displayChange }) => {
+const AnimatedCounter: React.FC<{ value: number; formatter: (val: number) => string }> = ({ value, formatter }) => {
+    const [displayValue, setDisplayValue] = useState(value);
+    const startTimeRef = React.useRef<number | null>(null);
+    const startValueRef = React.useRef<number>(value);
+    const reqIdRef = React.useRef<number | null>(null);
+
+    useEffect(() => {
+        if (Math.abs(value - displayValue) < 0.01) return;
+
+        startValueRef.current = displayValue;
+        startTimeRef.current = null;
+        
+        const duration = 1500; 
+
+        const animate = (timestamp: number) => {
+            if (!startTimeRef.current) startTimeRef.current = timestamp;
+            const progress = Math.min((timestamp - startTimeRef.current) / duration, 1);
+            const ease = 1 - Math.pow(1 - progress, 5);
+            
+            const current = startValueRef.current + (value - startValueRef.current) * ease;
+            setDisplayValue(current);
+
+            if (progress < 1) {
+                reqIdRef.current = requestAnimationFrame(animate);
+            } else {
+                setDisplayValue(value); 
+            }
+        };
+
+        reqIdRef.current = requestAnimationFrame(animate);
+
+        return () => {
+            if (reqIdRef.current) cancelAnimationFrame(reqIdRef.current);
+        };
+    }, [value]);
+
+    return <>{formatter(displayValue)}</>;
+};
+
+const SummaryCard: React.FC<{ title: string; value: string; numericValue?: number; formatFn?: (v: number) => string; change?: number; changePercent?: number; displayChange?: string }> = ({ title, value, numericValue, formatFn, change, changePercent, displayChange }) => {
   const safeChange = change ?? 0;
   const safeChangePercent = changePercent ?? 0;
   const hasChange = change !== undefined && changePercent !== undefined;
@@ -24,7 +63,13 @@ const SummaryCard: React.FC<{ title: string; value: string; change?: number; cha
       )}
       <CardContent>
         <p className="text-brand-secondary text-xs font-bold tracking-widest uppercase mb-1">{title}</p>
-        <p className="text-2xl md:text-3xl font-bold text-brand-text tracking-tight">{value}</p>
+        <p className="text-2xl md:text-3xl font-bold text-brand-text tracking-tight">
+            {numericValue !== undefined && formatFn ? (
+                <AnimatedCounter value={numericValue} formatter={formatFn} />
+            ) : (
+                value
+            )}
+        </p>
         {hasChange && (
           <div className="flex items-center mt-3">
              <span className={`flex items-center text-sm font-bold px-2 py-0.5 rounded ${
@@ -123,6 +168,8 @@ const Dashboard: React.FC = () => {
       price: settings.currency === 'BRL' ? p.price * fxRate : p.price,
   }));
 
+  const displayTotalInvested = settings.currency === 'BRL' ? totalInvested * fxRate : totalInvested;
+
   const formatXAxis = (val: string) => {
       try {
           const d = new Date(val);
@@ -166,6 +213,8 @@ const Dashboard: React.FC = () => {
         <SummaryCard 
             title={t('netWorth')}
             value={formatDisplayValue(totalValue || 0)} 
+            numericValue={totalValue || 0}
+            formatFn={formatDisplayValue}
             change={totalGainLoss}
             changePercent={totalGainLossPercent}
             displayChange={formatDisplayValue(Math.abs(totalGainLoss || 0))}
@@ -173,6 +222,8 @@ const Dashboard: React.FC = () => {
         <SummaryCard 
             title={t('totalInvested')}
             value={formatDisplayValue(totalInvested || 0)} 
+            numericValue={totalInvested || 0}
+            formatFn={formatDisplayValue}
         />
       </div>
 
@@ -271,6 +322,19 @@ const Dashboard: React.FC = () => {
                             cursor={{ stroke: '#58A6FF', strokeWidth: 1, strokeDasharray: '4 4' }}
                         />
                         
+                        <ReferenceLine 
+                            y={displayTotalInvested} 
+                            stroke="#8B949E" 
+                            strokeDasharray="3 3" 
+                            strokeOpacity={0.5}
+                            label={{ 
+                                value: 'Investido', 
+                                fill: '#8B949E', 
+                                fontSize: 10, 
+                                position: 'insideBottomRight' 
+                            }} 
+                        />
+
                         <Area 
                             type="monotone" 
                             dataKey="price" 

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { Card, CardHeader, CardContent } from '../ui/Card';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell, CartesianGrid, ComposedChart, Line } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell, CartesianGrid, ComposedChart } from 'recharts';
 import { Holding } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { financialApi } from '../../services/financialApi';
@@ -26,9 +26,11 @@ const CustomPieTooltip = ({ active, payload }: any) => {
 
 const CustomBarTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
-        const invested = payload.find((p: any) => p.dataKey === 'invested')?.value || 0;
-        const gain = payload.find((p: any) => p.dataKey === 'gain')?.value || 0;
-        const total = invested + gain;
+        // Encontra os valores reais nos dados (payload do recharts)
+        const data = payload[0].payload;
+        const invested = data.invested || 0;
+        const gain = data.realGain || 0; // Usamos o ganho real (pode ser negativo)
+        const total = data.totalValue || 0;
 
         return (
             <div className="bg-[#161B22] border border-[#30363D] p-3 rounded-lg shadow-xl min-w-[180px]">
@@ -40,12 +42,14 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
                 </div>
 
                 <div className="flex justify-between items-center mb-2 border-b border-white/10 pb-2">
-                    <span className="text-xs text-[#34D399] font-medium">● Ganho de Capital:</span>
-                    <span className="text-xs text-brand-text font-mono">{gain >= 0 ? '+' : ''}{formatCurrency(gain, 'USD')}</span>
+                    <span className={`text-xs font-medium ${gain >= 0 ? 'text-[#34D399]' : 'text-red-400'}`}>● Resultado:</span>
+                    <span className={`text-xs font-mono ${gain >= 0 ? 'text-brand-text' : 'text-red-400'}`}>
+                        {gain >= 0 ? '+' : ''}{formatCurrency(gain, 'USD')}
+                    </span>
                 </div>
 
                 <div className="flex justify-between items-center pt-1">
-                    <span className="text-sm text-white font-bold">Saldo do Mês:</span>
+                    <span className="text-sm text-white font-bold">Saldo Final:</span>
                     <span className="text-sm text-brand-primary font-bold font-mono">{formatCurrency(total, 'USD')}</span>
                 </div>
             </div>
@@ -134,21 +138,20 @@ const Reports: React.FC = () => {
                 return;
             }
 
-            // 1. Fetch Snapshot History (Current holdings projected to past)
+            // 1. Snapshot History
             const history = await financialApi.getPortfolioPriceHistory(transactions, fxRate, 'ALL');
             
-            // 2. Calculate Total Current Invested (For Ratio Scaling)
+            // 2. Calculate Total Current Invested (For Scaling)
             const totalCurrentInvested = transactions.reduce((acc, t) => acc + t.totalCost, 0);
 
-            // 3. Find First Transaction Date (Absolute Start)
+            // 3. Find Start Date
             const sortedTx = [...transactions].sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
             const firstTxDate = sortedTx.length > 0 ? new Date(sortedTx[0].dateTime) : new Date();
             
-            // Create integer representation for comparison (YYYYMM)
             const getMonthId = (d: Date) => d.getFullYear() * 100 + (d.getMonth() + 1);
             const startMonthId = getMonthId(firstTxDate);
 
-            // 4. Group Investments by Month
+            // 4. Group Contributions
             const contributionsByMonth: Record<string, number> = {};
             transactions.forEach(tx => {
                 const date = new Date(tx.dateTime);
@@ -159,14 +162,14 @@ const Reports: React.FC = () => {
                 contributionsByMonth[key] += cost;
             });
 
-            // 5. Group History Snapshots
+            // 5. Group History
             const groupedHistory: Record<string, any> = {};
             history.forEach(point => {
                 const date = new Date(point.date);
                 const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
                 groupedHistory[key] = {
                     dateKey: key,
-                    snapshotValue: point.price, // This is inflated if we bought assets recently
+                    snapshotValue: point.price, 
                     displayDate: date.toLocaleDateString(settings.language, { month: 'short', year: '2-digit' })
                 };
             });
@@ -192,6 +195,7 @@ const Reports: React.FC = () => {
                         displayDate: historyPoint.displayDate || key,
                         invested: 0,
                         gain: 0,
+                        realGain: 0,
                         totalValue: 0
                     };
                 }
@@ -203,27 +207,32 @@ const Reports: React.FC = () => {
                         displayDate: historyPoint.displayDate || key,
                         invested: 0,
                         gain: 0,
+                        realGain: 0,
                         totalValue: 0
                     };
                 }
 
-                // RATIO SCALING: Corrects "Ghost Profits"
-                // If I have 100k invested today, but only had 10k invested in Jan 2023,
-                // the snapshot value needs to be scaled down by (10k/100k) = 0.1
+                // RATIO SCALING: Ajusta o valor do snapshot para evitar "Lucros Fantasmas"
                 let adjustedNetWorth = rawSnapshotValue;
                 if (totalCurrentInvested > 0) {
                     const ratio = runningInvested / totalCurrentInvested;
                     adjustedNetWorth = rawSnapshotValue * ratio;
                 }
 
-                // Calculate Gain based on Adjusted Net Worth
-                let gain = adjustedNetWorth - runningInvested;
+                // Garante consistência: Se o mercado não variou, valor = investido
+                // Pequena tolerância para flutuação cambial
+                if (Math.abs(adjustedNetWorth - runningInvested) < 1) {
+                    adjustedNetWorth = runningInvested;
+                }
+
+                let realGain = adjustedNetWorth - runningInvested;
                 
                 return {
                     dateKey: key,
                     displayDate: historyPoint.displayDate || key,
                     invested: runningInvested,
-                    gain: gain > 0 ? gain : 0, // Stacked Bar logic: only show positive gain on top
+                    gain: realGain > 0 ? realGain : 0, // Para a barra empilhada (apenas positivo visualmente)
+                    realGain: realGain, // Para o tooltip (pode ser negativo)
                     totalValue: adjustedNetWorth
                 };
             });

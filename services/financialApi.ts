@@ -651,6 +651,7 @@ export const financialApi = {
             }
         });
 
+        // Ensure the last point matches live data to prevent "jumps"
         if (currentQuotes) {
             let liveValue = 0;
             Object.keys(currentHoldings).forEach(t => {

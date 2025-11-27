@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User, Suggestion } from '../types';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
@@ -146,15 +145,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     setCurrentUser(null);
                     setLoading(false);
                 } else if (session?.user) {
-                    if (!currentUser || event === 'SIGNED_IN') {
-                         const user = mapSessionToUser(session);
-                         setCurrentUser(user);
+                    if (!currentUser || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
                          
-                         // Ensure we get fresh profile data on login
+                         // FETCH PROFILE IMMEDIATELY on login to get subscription status
                          const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
-                         if (data) {
-                             setCurrentUser(mapSessionToUser(session, data));
-                         }
+                         
+                         const user = mapSessionToUser(session, data);
+                         setCurrentUser(user);
                     }
                     setLoading(false);
                 } else if (event === 'INITIAL_SESSION') {
@@ -405,14 +402,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const expiryDate = new Date(Date.now() + (days * 24 * 60 * 60 * 1000)).toISOString();
       
       if (isSupabaseConfigured) {
-          await supabase.from('profiles').update({ subscription_expires_at: expiryDate }).eq('id', userId);
+          const { error } = await supabase.from('profiles').update({ subscription_expires_at: expiryDate }).eq('id', userId);
+          if (error) console.error("Falha ao atualizar assinatura no Supabase", error);
       } 
       
+      // Update local Users list
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, subscriptionExpiresAt: expiryDate } : u));
 
+      // CRITICAL FIX: If updating SELF (Admin testing), update currentUser immediately
       if (currentUser && currentUser.id === userId) {
           setCurrentUser(prev => prev ? ({ ...prev, subscriptionExpiresAt: expiryDate }) : null);
-      } else if (!isSupabaseConfigured) {
+      } 
+      
+      if (!isSupabaseConfigured) {
           const updated = users.map(u => u.id === userId ? { ...u, subscriptionExpiresAt: expiryDate } : u);
           saveLocalUsers(updated);
       }
