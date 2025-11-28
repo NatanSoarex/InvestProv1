@@ -104,6 +104,19 @@ export const translations = {
     appliedValue: 'Valor Aplicado',
     capitalGain: 'Ganho de Capital',
     monthlyBalance: 'Saldo do Mês',
+    
+    // Smart Allocation
+    smartAllocationTitle: 'Estratégia de Rebalanceamento',
+    smartAllocationDesc: 'Defina suas metas de alocação (%) para cada ativo.',
+    currentPercent: 'Atual %',
+    targetPercent: 'Meta %',
+    deviation: 'Desvio',
+    action: 'Ação',
+    buy: 'Aportar',
+    wait: 'Aguardar',
+    balanced: 'Balanceado',
+    editGoals: 'Editar Metas',
+    saveGoals: 'Salvar Metas',
 
     // Projections
     projectionsTitle: 'Projeções Futuras',
@@ -240,6 +253,19 @@ export const translations = {
     appliedValue: 'Applied Value',
     capitalGain: 'Capital Gain',
     monthlyBalance: 'Monthly Balance',
+
+    // Smart Allocation
+    smartAllocationTitle: 'Smart Rebalancing',
+    smartAllocationDesc: 'Set your target allocation (%) for each asset.',
+    currentPercent: 'Current %',
+    targetPercent: 'Target %',
+    deviation: 'Deviation',
+    action: 'Action',
+    buy: 'Buy',
+    wait: 'Wait',
+    balanced: 'Balanced',
+    editGoals: 'Edit Goals',
+    saveGoals: 'Save Goals',
 
     // Projections
     projectionsTitle: 'Future Projections',

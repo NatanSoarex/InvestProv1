@@ -40,6 +40,8 @@ interface PortfolioContextType {
   t: (key: keyof typeof translations['pt-BR']) => string;
   isPremium: boolean;
   canAddAsset: boolean;
+  allocationTargets: Record<string, number>;
+  updateAllocationTargets: (targets: Record<string, number>) => void;
 }
 
 const PortfolioContext = createContext<PortfolioContextType | undefined>(undefined);
@@ -85,6 +87,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   
   const [localTransactions, setLocalTransactions] = useLocalStorage<Transaction[]>(`transactions_${userKey}`, []);
   const [localWatchlist, setLocalWatchlist] = useLocalStorage<string[]>(`watchlist_${userKey}`, []);
+  const [allocationTargets, setAllocationTargets] = useLocalStorage<Record<string, number>>(`targets_${userKey}`, {});
   
   const [settings, setSettings] = useLocalStorage<AppSettings>('appSettings', { currency: 'BRL', language: 'pt-BR' });
   
@@ -311,6 +314,10 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [setLocalWatchlist, currentUser]);
 
+  const updateAllocationTargets = useCallback((targets: Record<string, number>) => {
+      setAllocationTargets(targets);
+  }, [setAllocationTargets]);
+
   const isAssetInWatchlist = useCallback((ticker: string) => watchlist.includes(ticker.toUpperCase().trim()), [watchlist]);
 
   const getAssetDetails = useCallback(async (ticker: string) => {
@@ -404,11 +411,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                      const price = Number(quote.price) || 0;
                      
                      if (isToday) {
-                         // Se comprou HOJE, a variação é Preço Atual - Preço Pago
                          const txPrice = Number(t.price) || 0;
                          holdingDayChange += (price - txPrice) * t.quantity;
                      } else {
-                         // Se comprou ANTES, a variação é o Change do dia fornecido pela API (já calculado robustamente)
                          holdingDayChange += quote.change * t.quantity;
                      }
                  } catch (e) {}
@@ -488,7 +493,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     holdings, transactions, watchlist, totalValue, totalInvested, totalGainLoss, totalGainLossPercent, dayChange, dayChangePercent,
     addTransaction, removeTransaction, removeHolding, addToWatchlist, removeFromWatchlist, isAssetInWatchlist,
     getAssetDetails, getLiveQuote, isLoading, isRefreshing, refresh, fxRate, lastUpdated, settings, updateSettings, formatDisplayValue, t,
-    isPremium: isPremiumUser, canAddAsset
+    isPremium: isPremiumUser, canAddAsset, allocationTargets, updateAllocationTargets
   };
 
   return <PortfolioContext.Provider value={value}>{children}</PortfolioContext.Provider>;
